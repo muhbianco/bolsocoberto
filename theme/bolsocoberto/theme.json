@@ -1,0 +1,73 @@
+{
+  "$schema": "https://schemas.wp.org/trunk/theme.json",
+  "version": 3,
+  "settings": {
+    "appearanceTools": true,
+    "color": {
+      "palette": [
+        { "slug": "ink", "color": "#121417", "name": "Tinta" },
+        { "slug": "paper", "color": "#FAFAF7", "name": "Papel" },
+        { "slug": "coverage", "color": "#0F7A4B", "name": "Cobertura" },
+        { "slug": "gold", "color": "#E8A317", "name": "Ouro" }
+      ]
+    },
+    "typography": {
+      "fluid": true,
+      "fontFamilies": [
+        {
+          "fontFamily": "Georgia, \"Times New Roman\", serif",
+          "slug": "heading",
+          "name": "Títulos"
+        },
+        {
+          "fontFamily": "system-ui, -apple-system, \"Segoe UI\", sans-serif",
+          "slug": "body",
+          "name": "Corpo"
+        }
+      ]
+    },
+    "layout": {
+      "contentSize": "70ch",
+      "wideSize": "72rem"
+    }
+  },
+  "styles": {
+    "color": {
+      "background": "var:preset|color|paper",
+      "text": "var:preset|color|ink"
+    },
+    "typography": {
+      "fontFamily": "var:preset|font-family|body",
+      "fontSize": "1.0625rem",
+      "lineHeight": "1.65"
+    },
+    "elements": {
+      "link": {
+        "color": { "text": "var:preset|color|coverage" },
+        ":hover": {
+          "color": { "text": "var:preset|color|ink" }
+        }
+      },
+      "heading": {
+        "typography": {
+          "fontFamily": "var:preset|font-family|heading",
+          "fontWeight": "700",
+          "lineHeight": "1.2"
+        }
+      },
+      "h1": {
+        "typography": { "fontSize": "clamp(2rem, 4vw, 3rem)" }
+      },
+      "button": {
+        "color": {
+          "background": "var:preset|color|coverage",
+          "text": "#ffffff"
+        }
+      }
+    }
+  },
+  "templateParts": [
+    { "name": "header", "title": "Cabeçalho", "area": "header" },
+    { "name": "footer", "title": "Rodapé", "area": "footer" }
+  ]
+}

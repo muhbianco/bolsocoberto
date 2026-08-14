@@ -1,0 +1,91 @@
+# =============================================================================
+# Bolso Coberto — WordPress (Docker Swarm + Traefik)
+# Canônico: https://bolsocoberto.com.br
+# .com e www redirecionam para o apex .com.br
+# Rede: bolso-net (isolada do chatbot-net / MuhBianco)
+# DB: MariaDB do HOST, usuário só neste database
+#
+# Stack Portainer: bolsocoberto (não misturar com o editor).
+#
+# IMPORTANTE — Portainer:
+# - Preencha WORDPRESS_DB_PASSWORD no Editor (não neste arquivo git).
+# - Nunca cole este YAML vazio por cima da stack de prod.
+# =============================================================================
+
+version: "3.8"
+
+services:
+  wordpress:
+    image: wordpress:7.0.2-php8.3-apache
+    environment:
+      WORDPRESS_DB_HOST: host.docker.internal:3306
+      WORDPRESS_DB_USER: bolsocoberto
+      WORDPRESS_DB_PASSWORD: ""
+      WORDPRESS_DB_NAME: bolsocoberto
+      WORDPRESS_TABLE_PREFIX: wp_
+      # $$ evita interpolação do Compose em $_SERVER
+      WORDPRESS_CONFIG_EXTRA: "define('FORCE_SSL_ADMIN', true); $$_SERVER['HTTPS'] = 'on';"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - wordpress_data:/var/www/html
+    networks:
+      - bolso-net
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.10"
+          memory: 128M
+      labels:
+        - traefik.enable=true
+        - traefik.swarm.network=bolso-net
+        - traefik.http.services.bolso.loadbalancer.server.port=80
+        - traefik.http.services.bolso.loadbalancer.passHostHeader=true
+        - traefik.http.middlewares.bolso_headers.headers.stsSeconds=31536000
+        - traefik.http.middlewares.bolso_headers.headers.stsIncludeSubdomains=true
+        - traefik.http.middlewares.bolso_headers.headers.contentTypeNosniff=true
+        - traefik.http.middlewares.bolso_headers.headers.referrerPolicy=strict-origin-when-cross-origin
+        - traefik.http.middlewares.bolso_www.redirectregex.permanent=true
+        - traefik.http.middlewares.bolso_www.redirectregex.regex=^https://www\.bolsocoberto\.com\.br/(.*)
+        - traefik.http.middlewares.bolso_www.redirectregex.replacement=https://bolsocoberto.com.br/$${1}
+        - traefik.http.middlewares.bolso_com.redirectregex.permanent=true
+        - traefik.http.middlewares.bolso_com.redirectregex.regex=^https://(www\.)?bolsocoberto\.com/(.*)
+        - traefik.http.middlewares.bolso_com.redirectregex.replacement=https://bolsocoberto.com.br/$${2}
+        - traefik.http.routers.bolso.rule=Host(`bolsocoberto.com.br`)
+        - traefik.http.routers.bolso.entrypoints=websecure
+        - traefik.http.routers.bolso.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.bolso.priority=10
+        - traefik.http.routers.bolso.service=bolso
+        - traefik.http.routers.bolso.middlewares=bolso_headers
+        - traefik.http.routers.bolso_www.rule=Host(`www.bolsocoberto.com.br`)
+        - traefik.http.routers.bolso_www.entrypoints=websecure
+        - traefik.http.routers.bolso_www.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.bolso_www.priority=20
+        - traefik.http.routers.bolso_www.service=bolso
+        - traefik.http.routers.bolso_www.middlewares=bolso_www
+        - traefik.http.routers.bolso_com.rule=Host(`bolsocoberto.com`) || Host(`www.bolsocoberto.com`)
+        - traefik.http.routers.bolso_com.entrypoints=websecure
+        - traefik.http.routers.bolso_com.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.bolso_com.priority=20
+        - traefik.http.routers.bolso_com.service=bolso
+        - traefik.http.routers.bolso_com.middlewares=bolso_com
+
+networks:
+  bolso-net:
+    external: true
+    name: bolso-net
+
+volumes:
+  wordpress_data:

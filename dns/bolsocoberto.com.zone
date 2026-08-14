@@ -1,0 +1,29 @@
+; Domain: bolsocoberto.com
+; GoDaddy BIND export — importar na zona bolsocoberto.com
+; Padrão MuhBianco: @ e manager em A; www CNAME → manager
+
+$ORIGIN bolsocoberto.com.
+
+; SOA Record
+@	3600	 IN 	SOA	ns29.domaincontrol.com.	dns.jomax.net. (
+					2026081406
+					28800
+					7200
+					604800
+					3600
+					)
+
+; A Record
+@	600	 IN 	A	62.238.104.94
+manager	600	 IN 	A	62.238.104.94
+
+; NS Record
+@	3600	 IN 	NS	ns29.domaincontrol.com.
+@	3600	 IN 	NS	ns30.domaincontrol.com.
+
+; TXT Record
+_dmarc	3600	 IN 	TXT	"v=DMARC1; p=quarantine; adkim=r; aspf=r; rua=mailto:dmarc_rua@onsecureserver.net;"
+
+; CNAME Record
+www	600	 IN 	CNAME	manager.bolsocoberto.com.
+_domainconnect	3600	 IN 	CNAME	_domainconnect.gd.domaincontrol.com.

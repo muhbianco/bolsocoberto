@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}{{ job.title or "Job" }}{% endblock %}
+{% block body %}
+  <p class="muted">{{ job.status }} · {{ job.id }}</p>
+  {% if job.error_message %}
+    <p class="warn">{{ job.error_message }}</p>
+  {% endif %}
+  {% if job.status == "queued" or job.status == "running" %}
+    <p>Processando. Recarregue em alguns segundos.</p>
+    <script>setTimeout(function () { location.reload(); }, 4000);</script>
+  {% endif %}
+
+  <h2>Fontes</h2>
+  <ul>
+    {% for src in job.sources %}
+      <li>{{ src.fetch_status }} · <a href="{{ src.url }}" rel="nofollow noopener" target="_blank">{{ src.url }}</a>
+        {% if src.error_message %}<br><span class="warn">{{ src.error_message }}</span>{% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+
+  {% if job.status == "needs_review" or job.status == "applied" or (job.title and job.body_html) %}
+  <form method="post" action="/jobs/{{ job.id }}/save">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>Título</label>
+    <input name="title" value="{{ job.title or "" }}" required {% if job.status == "applied" %}readonly{% endif %}>
+    <label>Slug</label>
+    <input name="slug" value="{{ job.slug or "" }}" required {% if job.status == "applied" %}readonly{% endif %}>
+    <label>Categoria</label>
+    <select name="category_slug" {% if job.status == "applied" %}disabled{% endif %}>
+      <option value="financas" {% if job.category_slug == "financas" %}selected{% endif %}>Finanças</option>
+      <option value="seguros" {% if job.category_slug == "seguros" %}selected{% endif %}>Seguros</option>
+    </select>
+    <label>Meta (excerpt)</label>
+    <input name="excerpt" value="{{ job.excerpt or "" }}" maxlength="155" {% if job.status == "applied" %}readonly{% endif %}>
+    <label>Corpo (HTML)</label>
+    <textarea name="body_html" rows="18" {% if job.status == "applied" %}readonly{% endif %}>{{ job.body_html or "" }}</textarea>
+    {% if job.status != "applied" %}
+      <button type="submit">Salvar edição</button>
+    {% endif %}
+  </form>
+
+  <section class="preview">
+    <h2>Preview</h2>
+    <article>
+      <p class="kicker">{{ job.category_slug }}</p>
+      <h1>{{ job.title }}</h1>
+      {{ job.body_html | safe }}
+    </article>
+  </section>
+
+  {% if job.status == "needs_review" %}
+  <form method="post" action="/jobs/{{ job.id }}/apply" onsubmit="return confirm('Criar rascunho no WordPress?');">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button type="submit" class="primary">Aplicar rascunho no WP</button>
+  </form>
+  {% endif %}
+  {% if job.wp_post_id %}
+    <p>Rascunho WP id {{ job.wp_post_id }} — publique no admin.</p>
+  {% endif %}
+  {% endif %}
+{% endblock %}

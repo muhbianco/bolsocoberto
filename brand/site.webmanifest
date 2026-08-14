@@ -1,0 +1,22 @@
+{
+  "name": "Bolso Coberto",
+  "short_name": "Bolso Coberto",
+  "description": "Finanças e proteção, sem enrolação.",
+  "start_url": "/",
+  "display": "browser",
+  "background_color": "#FAFAF7",
+  "theme_color": "#0F7A4B",
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "/wp-content/themes/bolsocoberto/assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/wp-content/themes/bolsocoberto/assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

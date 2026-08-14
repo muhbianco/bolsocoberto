@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Nova pauta{% endblock %}
+{% block body %}
+  <h1>Nova pauta</h1>
+  <p>Cole uma ou mais URLs da <strong>mesma</strong> notícia. O worker extrai fatos e escreve texto original. Não republicamos o artigo.</p>
+  <form method="post" action="/jobs">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label for="urls">URLs (uma por linha)</label>
+    <textarea id="urls" name="urls" rows="8" required placeholder="https://..."></textarea>
+    <label for="angle">Ângulo (opcional)</label>
+    <input id="angle" name="angle" maxlength="500" placeholder="Ex.: impacto no bolso de quem tem seguro auto">
+    <button type="submit">Enfileirar</button>
+  </form>
+{% endblock %}

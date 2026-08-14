@@ -1,0 +1,26 @@
+; Domain: bolsocoberto.com.br
+; Conferir NS/SOA no export da GoDaddy desta zona antes de importar
+; (RDAP usava ns27/ns28.domaincontrol.com — se o teu export for outro, troca só o SOA/NS)
+
+$ORIGIN bolsocoberto.com.br.
+
+; SOA Record
+@	3600	 IN 	SOA	ns27.domaincontrol.com.	dns.jomax.net. (
+					2026081407
+					28800
+					7200
+					604800
+					3600
+					)
+
+; A Record
+@	600	 IN 	A	62.238.104.94
+manager	600	 IN 	A	62.238.104.94
+
+; NS Record
+@	3600	 IN 	NS	ns27.domaincontrol.com.
+@	3600	 IN 	NS	ns28.domaincontrol.com.
+
+; CNAME Record
+www	600	 IN 	CNAME	manager.bolsocoberto.com.br.
+post	600	 IN 	CNAME	manager.bolsocoberto.com.br.

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Fila{% endblock %}
+{% block body %}
+  <h1>Fila</h1>
+  <p class="muted">Logado como {{ email }}</p>
+  <p><a class="btn" href="/jobs/new">Nova pauta</a></p>
+  {% if not jobs %}
+    <p>Nenhum job ainda.</p>
+  {% else %}
+  <table>
+    <thead>
+      <tr><th>Quando</th><th>Status</th><th>Título / URLs</th></tr>
+    </thead>
+    <tbody>
+      {% for job in jobs %}
+      <tr>
+        <td>{{ job.created_at.strftime("%d/%m %H:%M") }}</td>
+        <td><span class="st st-{{ job.status }}">{{ job.status }}</span></td>
+        <td><a href="/jobs/{{ job.id }}">{{ job.title or job.source_urls[0] }}</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+{% endblock %}

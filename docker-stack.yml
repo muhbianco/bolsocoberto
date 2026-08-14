@@ -1,0 +1,130 @@
+# =============================================================================
+# Bolso Coberto Editor — Stack Portainer (Docker Swarm + Traefik)
+# Domínio: post.bolsocoberto.com.br (noindex)
+# Rede: bolso-net (isolada do chatbot-net / MuhBianco)
+# Imagem: muhrilobianco/bolsocoberto:latest (Docker Hub)
+# DB: MariaDB do HOST, database bolsocoberto, tabelas editor_*
+#
+# Serviços:
+#   bolso_editor         — HTTP (Traefik)
+#   bolso_editor_worker  — fila de pauta (mesma imagem, outro comando)
+#
+# Fluxo:
+# 1. git push → na VPS git pull + docker build/tag/push (sem ./build.sh prod)
+# 2. Portainer -> Stacks -> este YAML -> preencher envs -> Deploy
+# 3. DNS CNAME post → manager.bolsocoberto.com.br
+#
+# IMPORTANTE — Portainer:
+# - A stack no Portainer deve ter as MESMAS chaves deste arquivo (valores preenchidos lá).
+# - Nunca cole este YAML “vazio” por cima da stack de prod: apaga secrets.
+# - Worker herda x-app-env: preencha secrets UMA vez.
+# =============================================================================
+
+version: "3.8"
+
+x-app-env: &app_env
+  ENVIRONMENT: production
+  LOG_LEVEL: INFO
+  DOCS_ENABLED: "false"
+
+  DB_HOST: host.docker.internal
+  DB_PORT: "3306"
+  DB_USER: bolsocoberto
+  DB_PASSWORD: ""
+  DB_NAME: bolsocoberto
+  DB_POOL_SIZE: "5"
+  DB_MAX_OVERFLOW: "10"
+
+  SESSION_SECRET: ""
+  PUBLIC_URL: https://post.bolsocoberto.com.br
+  OAUTH_ALLOWLIST: muhbianco@gmail.com
+
+  GOOGLE_CLIENT_ID: ""
+  GOOGLE_CLIENT_SECRET: ""
+
+  GEMINI_API_KEY: ""
+  LLM_MODEL: gemini-2.5-flash
+
+  WP_BASE_URL: https://bolsocoberto.com.br
+  WP_APP_USER: ""
+  WP_APP_PASSWORD: ""
+
+services:
+  bolso_editor:
+    image: muhrilobianco/bolsocoberto:latest
+    environment:
+      <<: *app_env
+      RUN_MIGRATIONS_ON_STARTUP: "true"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - bolso-net
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+      update_config:
+        order: start-first
+        failure_action: rollback
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+        reservations:
+          cpus: "0.10"
+          memory: 64M
+      labels:
+        - traefik.enable=true
+        - traefik.swarm.network=bolso-net
+        - traefik.http.routers.bolso_editor.rule=Host(`post.bolsocoberto.com.br`)
+        - traefik.http.routers.bolso_editor.entrypoints=websecure
+        - traefik.http.routers.bolso_editor.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.bolso_editor.priority=20
+        - traefik.http.routers.bolso_editor.service=bolso_editor
+        - traefik.http.routers.bolso_editor.middlewares=bolso_editor_headers
+        - traefik.http.services.bolso_editor.loadbalancer.server.port=8000
+        - traefik.http.services.bolso_editor.loadbalancer.passHostHeader=true
+        - traefik.http.middlewares.bolso_editor_headers.headers.stsSeconds=31536000
+        - traefik.http.middlewares.bolso_editor_headers.headers.stsIncludeSubdomains=true
+        - traefik.http.middlewares.bolso_editor_headers.headers.contentTypeNosniff=true
+        - traefik.http.middlewares.bolso_editor_headers.headers.browserXssFilter=true
+        - traefik.http.middlewares.bolso_editor_headers.headers.referrerPolicy=no-referrer
+        - traefik.http.middlewares.bolso_editor_headers.headers.customFrameOptionsValue=DENY
+        - traefik.http.middlewares.bolso_editor_headers.headers.customResponseHeaders.X-Robots-Tag=noindex, nofollow
+        - traefik.http.middlewares.bolso_editor_headers.headers.permissionsPolicy=camera=(), microphone=(), geolocation=()
+
+  bolso_editor_worker:
+    image: muhrilobianco/bolsocoberto:latest
+    command:
+      - python
+      - -m
+      - app.workers.poller
+    environment:
+      <<: *app_env
+      RUN_MIGRATIONS_ON_STARTUP: "false"
+    healthcheck:
+      disable: true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - bolso-net
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+        reservations:
+          cpus: "0.10"
+          memory: 64M
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+
+networks:
+  bolso-net:
+    external: true
+    name: bolso-net
