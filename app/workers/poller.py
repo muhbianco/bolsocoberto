@@ -22,7 +22,7 @@ async def process_one() -> bool:
 
     async with SessionFactory() as session:
         try:
-            await JobRunner(JobRepository(session)).run(job_id)
+            await JobRunner(session).run(job_id)
             await session.commit()
         except Exception:
             await session.rollback()

@@ -17,3 +17,6 @@ alembic==1.18.5
 # Extração de pauta (não republicar HTML)
 trafilatura==2.0.0
 bleach==6.2.0
+
+# Capa 1200x675 exigida pelo Google Discover
+Pillow==12.3.0

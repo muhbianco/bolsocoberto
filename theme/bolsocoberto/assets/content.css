@@ -1,0 +1,158 @@
+/*
+ * Blocos que o editor gera no corpo do post.
+ * As classes são as mesmas liberadas pelo sanitizador em app/services/content_html.py;
+ * qualquer nome fora daquela allowlist é removido antes de chegar aqui.
+ */
+
+.bc-takeaways,
+.bc-note {
+  margin: 1.75rem 0;
+  padding: 1rem 1.25rem;
+  background: #f2f5f1;
+  border-left: 4px solid var(--bc-coverage);
+}
+
+.bc-takeaways p:first-child,
+.bc-note p:first-child {
+  margin-top: 0;
+}
+
+.bc-takeaways ul,
+.bc-note ul {
+  margin-bottom: 0;
+  padding-left: 1.1rem;
+}
+
+.bc-takeaways li,
+.bc-note li {
+  margin-bottom: 0.4rem;
+}
+
+.bc-table-wrap {
+  margin: 2rem 0;
+  overflow-x: auto;
+}
+
+.bc-table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.bc-table-wrap caption {
+  text-align: left;
+  font-weight: 700;
+  padding-bottom: 0.6rem;
+  line-height: 1.35;
+}
+
+.bc-table-wrap th,
+.bc-table-wrap td {
+  text-align: left;
+  padding: 0.6rem 0.7rem;
+  border-bottom: 1px solid #dcdcd4;
+}
+
+.bc-table-wrap thead th {
+  border-bottom: 2px solid var(--bc-ink);
+  font-size: 0.85rem;
+  line-height: 1.3;
+}
+
+.bc-table-wrap tbody th {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.bc-faq {
+  margin-top: 2.5rem;
+}
+
+.bc-faq-item {
+  padding: 0.75rem 0;
+  border-bottom: 1px solid #e3e3dc;
+}
+
+.bc-faq-item h3 {
+  margin: 0 0 0.4rem;
+  font-size: 1.05rem;
+}
+
+.bc-faq-item p {
+  margin: 0;
+}
+
+.bc-primary-sources {
+  margin-top: 2.5rem;
+  padding-top: 1.25rem;
+  border-top: 3px solid var(--bc-gold);
+}
+
+.bc-primary-sources h2 {
+  font-size: 1.1rem;
+  margin-top: 0;
+}
+
+.bc-primary-sources ul {
+  padding-left: 1.1rem;
+}
+
+.bc-sources {
+  margin-top: 1rem;
+  color: #52565a;
+}
+
+/*
+ * Altura reservada antes do anúncio carregar. Sem isto o texto pula quando o
+ * iframe entra, o CLS despenca e o Discover deixa de distribuir.
+ */
+.bc-ad {
+  margin: 2.25rem 0;
+  min-height: 280px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  contain: layout;
+}
+
+.bc-ad__label {
+  display: block;
+  width: 100%;
+  font-size: 0.68rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #8b8f93;
+  margin-bottom: 0.35rem;
+}
+
+.bc-ad .adsbygoogle {
+  width: 100%;
+}
+
+@media (min-width: 48rem) {
+  .bc-ad {
+    min-height: 300px;
+  }
+}
+
+.bc-byline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  align-items: baseline;
+  font-size: 0.9rem;
+  color: #52565a;
+}
+
+.bc-author-box {
+  margin-top: 3rem;
+  padding: 1.25rem;
+  border: 2px solid var(--bc-ink);
+  background: #fff;
+}
+
+.bc-author-box h2 {
+  margin-top: 0;
+  font-size: 1.05rem;
+}

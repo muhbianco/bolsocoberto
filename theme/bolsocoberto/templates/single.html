@@ -4,11 +4,38 @@
 <main class="wp-block-group">
 	<!-- wp:post-terms {"term":"category","style":{"typography":{"textTransform":"uppercase","fontSize":"0.75rem","letterSpacing":"0.08em","fontWeight":"700"},"elements":{"link":{"color":{"text":"var:preset|color|coverage"}}}}} /-->
 	<!-- wp:post-title {"level":1} /-->
-	<!-- wp:post-date {"fontSize":"small"} /-->
+
+	<!-- wp:group {"className":"bc-byline","layout":{"type":"flex","flexWrap":"wrap"}} -->
+	<div class="wp-block-group bc-byline">
+		<!-- wp:paragraph {"fontSize":"small"} -->
+		<p>Por</p>
+		<!-- /wp:paragraph -->
+		<!-- wp:post-author-name {"isLink":true,"fontSize":"small"} /-->
+		<!-- wp:post-date {"fontSize":"small"} /-->
+		<!-- wp:paragraph {"fontSize":"small"} -->
+		<p>· Atualizado em</p>
+		<!-- /wp:paragraph -->
+		<!-- wp:post-date {"displayType":"modified","fontSize":"small"} /-->
+	</div>
+	<!-- /wp:group -->
+
+	<!-- wp:post-featured-image {"aspectRatio":"16/9","style":{"spacing":{"margin":{"top":"1.5rem"}}}} /-->
+
 	<!-- wp:separator {"backgroundColor":"gold","className":"is-style-wide"} -->
 	<hr class="wp-block-separator has-text-color has-gold-color has-alpha-channel-opacity has-gold-background-color has-background is-style-wide"/>
 	<!-- /wp:separator -->
+
 	<!-- wp:post-content {"layout":{"type":"constrained","contentSize":"70ch"}} /-->
+
+	<!-- wp:group {"className":"bc-author-box"} -->
+	<div class="wp-block-group bc-author-box">
+		<!-- wp:heading {"level":2} -->
+		<h2>Quem escreveu</h2>
+		<!-- /wp:heading -->
+		<!-- wp:post-author-name {"isLink":true,"style":{"typography":{"fontWeight":"700"}}} /-->
+		<!-- wp:post-author-biography {"fontSize":"small"} /-->
+	</div>
+	<!-- /wp:group -->
 </main>
 <!-- /wp:group -->
 

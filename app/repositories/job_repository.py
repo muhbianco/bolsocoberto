@@ -18,11 +18,18 @@ class JobRepository:
         urls: list[str],
         angle: str | None,
         created_by_email: str,
+        content_type: str,
+        topic: str | None = None,
+        update_target_post_id: int | None = None,
     ) -> EditorJob:
         job = EditorJob(
             status=JobStatus.QUEUED,
+            content_type=content_type,
             source_urls=urls,
+            topic=topic,
             angle=angle,
+            update_target_post_id=update_target_post_id,
+            wp_post_id=update_target_post_id,
             created_by_email=created_by_email,
             sources=[
                 EditorJobSource(url=url, fetch_status=FetchStatus.PENDING) for url in urls

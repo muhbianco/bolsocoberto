@@ -43,10 +43,23 @@ class Settings(BaseSettings):
     gemini_api_key: SecretStr = SecretStr("")
     llm_model: str = "gemini-3.5-flash"
     llm_timeout_seconds: float = 90.0
+    llm_max_output_tokens: int = 16384
+
+    # Contenção máxima de 8-gramas do rascunho dentro de qualquer fonte.
+    # Acima disso o texto é paráfrase, não conteúdo próprio, e o apply é bloqueado.
+    similarity_block_threshold: float = 0.12
 
     wp_base_url: str = "https://bolsocoberto.com.br"
     wp_app_user: str = ""
     wp_app_password: SecretStr = SecretStr("")
+    wp_author_id: int = 0
+    wp_index_ttl_minutes: int = 60
+
+    # Séries temporais públicas do Banco Central (SGS), sem chave.
+    bcb_api_base: str = "https://api.bcb.gov.br"
+    bcb_timeout_seconds: float = 10.0
+
+    hero_image_enabled: bool = True
 
     fetch_timeout_seconds: float = 15.0
     fetch_max_bytes: int = 1_500_000

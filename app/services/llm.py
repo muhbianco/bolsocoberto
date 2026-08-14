@@ -2,89 +2,212 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
+from enum import StrEnum
 from typing import Any
 
-import bleach
 import httpx
 
 from app.core.config import settings
 from app.core.exceptions import DomainError
 from app.core.logging import get_logger
+from app.services.content_html import sanitize_html
 
 logger = get_logger(__name__)
 
 _GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
-ALLOWED_TAGS = [
-    "p",
-    "h2",
-    "h3",
-    "ul",
-    "ol",
-    "li",
-    "strong",
-    "em",
-    "a",
-    "blockquote",
-    "br",
-]
-ALLOWED_ATTRS = {"a": ["href", "rel", "target"]}
+MAX_SOURCE_CHARS = 24_000
 
-_PROMPT = """Você é redator do portal Bolso Coberto (finanças e seguros, PT-BR).
-Os trechos abaixo são FATOS extraídos de URLs de pauta. NÃO republicar, NÃO parafrasear o artigo original frase a frase, NÃO copiar título do portal.
-Escreva um texto ORIGINAL na voz Bolso Coberto: direto, sem enrolação, sem tom de guru, sem conselho de investimento personalizado.
-Só use fatos que estejam nos trechos. Se faltar dado, omita — não invente número, nome, data ou citação.
-Citação curta (no máximo duas frases) só se for comentar, com a URL da fonte no href.
-Inclua no final uma seção "Fontes" com lista de links.
 
-Categoria: apenas "financas" ou "seguros".
-Slug: minúsculas, hífen, sem acento, até 80 caracteres.
+class ContentType(StrEnum):
+    NOTICIA = "noticia"
+    EXPLICATIVO = "explicativo"
+    GUIA = "guia"
 
-Responda SOMENTE JSON válido com as chaves:
-title, slug, category, excerpt (meta description, até 155 caracteres), body_html, sources (array de objetos url e label).
 
-Ângulo pedido pelo editor (pode estar vazio):
-ANGLE_PLACEHOLDER
+CONTENT_TYPE_LABELS = {
+    ContentType.NOTICIA: "Notícia curta",
+    ContentType.EXPLICATIVO: "Explicativo (notícia como gancho)",
+    ContentType.GUIA: "Guia evergreen",
+}
 
-Fontes e fatos:
+_OUTLINES: dict[ContentType, str] = {
+    ContentType.NOTICIA: """Alvo: 600 a 900 palavras.
+1. Abertura de duas ou três frases com o fato principal e o número que importa.
+2. <h2> O que aconteceu — o fato em contexto, com os dados do ledger.
+3. <h2> O que muda no seu bolso — consequência concreta para o leitor comum.
+4. <h2> Perguntas rápidas — 3 perguntas curtas em <h3> com resposta objetiva.""",
+    ContentType.EXPLICATIVO: """Alvo: 1100 a 1600 palavras. Este é o formato principal do site.
+A notícia é o gancho, não o produto. O leitor chega pelo fato e fica pela explicação.
+1. Abertura de três a quatro frases: o que aconteceu e por que ele deveria se importar.
+2. <h2> O que de fato mudou — os dados do ledger, com período e fonte de cada número.
+3. <h2> Por que isso aconteceu — o mecanismo econômico, explicado sem jargão.
+4. <h2> Quem sente no bolso — segmentos concretos (quem tem CDB, quem financia imóvel,
+   quem paga seguro, quem tem dívida no cartão). Seja específico, não genérico.
+5. <h2> Os números de hoje — aqui entram os blocos de dados calculados.
+6. <h2> O que fazer com essa informação — orientação geral e honesta, nunca
+   recomendação personalizada, e diga também quando a resposta é "não fazer nada".
+7. <h2> Perguntas frequentes — 3 a 5 perguntas em <h3>.""",
+    ContentType.GUIA: """Alvo: 1800 a 2500 palavras. Conteúdo perene, é o que sustenta a receita.
+1. Abertura que responde a pergunta principal em até 60 palavras, direto,
+   porque é esse trecho que vira resposta destacada e citação em resposta de IA.
+2. <h2> O que é e como funciona.
+3. <h2> Quanto custa (ou quanto rende) na prática — com números.
+4. <h2> Comparativo — tabela comparando as opções reais do mercado brasileiro.
+5. <h2> Passo a passo — lista ordenada, acionável.
+6. <h2> Erros que custam caro — 4 a 6 erros comuns e o prejuízo de cada um.
+7. <h2> Perguntas frequentes — 4 a 6 perguntas em <h3>.""",
+}
+
+_EXTRACT_PROMPT = """Você extrai fatos verificáveis de reportagens para a redação do Bolso Coberto.
+
+Para CADA informação factual relevante do material abaixo, devolva uma entrada com:
+- claim: a afirmação em uma frase curta e neutra, em PT-BR
+- value: o número exato como apareceu, ou "" se não houver número
+- unit: a unidade do número (%, R$, pontos, milhões, pontos-base) ou ""
+- period: a que data ou período o dado se refere (ex.: "junho de 2026") ou ""
+- entity: quem produziu ou anunciou o dado (IBGE, Copom, Susep, uma empresa) ou ""
+- primary_source: o nome da fonte ORIGINAL do dado, nunca o veículo que noticiou.
+  Se o texto diz "segundo o IBGE, o varejo cresceu 0,5%", primary_source é
+  "IBGE - Pesquisa Mensal de Comércio", e não o nome do jornal.
+- primary_source_url: URL oficial da fonte primária se o texto citar uma; caso
+  contrário "". Não invente URL.
+- source_url: a URL do material de onde você tirou o fato
+
+Regras:
+- Só extraia o que está EXPLÍCITO. Não deduza, não complete, não arredonde.
+- Ignore opinião de colunista, projeção sem autor identificado, publicidade e
+  chamadas para outras matérias.
+- Uma entrada por fato. Não junte dois números na mesma entrada.
+- Se o mesmo fato aparece em mais de uma fonte, registre uma vez e separe as URLs
+  por espaço em source_url.
+- Preserve o número exatamente como publicado, sem converter unidade.
+
+Responda SOMENTE JSON válido: {"facts": [...]}
+
+MATERIAL:
 FACTS_PLACEHOLDER
 """
 
+_WRITE_PROMPT = """Você é redator do Bolso Coberto, portal brasileiro de finanças pessoais e seguros.
 
-def sanitize_html(raw: str) -> str:
-    return bleach.clean(
-        raw or "",
-        tags=ALLOWED_TAGS,
-        attributes=ALLOWED_ATTRS,
-        protocols=["http", "https"],
-        strip=True,
-    )
+Você NÃO recebeu o texto das reportagens, apenas a lista de fatos apurados. Escreva
+a partir dela. Isso é proposital: o resultado precisa ser um texto nosso, e não a
+versão reescrita do texto de outro veículo.
+
+VOZ
+Direto e claro, frases curtas. Fale com o leitor por "você".
+Sem tom de guru, sem "descubra o segredo", sem "no mundo de hoje", sem emoji.
+Explique todo jargão na primeira vez que ele aparecer.
+Nunca dê recomendação personalizada de investimento nem de apólice.
+
+REGRA DE FATO — inegociável
+Todo número, percentual, valor, data, nome próprio e citação do seu texto precisa
+sair da LISTA DE FATOS. Se um dado que você gostaria de usar não está lá, escreva
+sem ele. Não invente, não estime, não escreva "cerca de" para disfarçar ausência.
+Ao usar um dado, deixe claro o período e de quem ele é.
+
+PAUTA
+TOPIC_PLACEHOLDER
+
+ESTRUTURA
+OUTLINE_PLACEHOLDER
+
+VALOR PRÓPRIO — é o que nos separa da fonte
+- Traduza cada número em consequência concreta e específica para o leitor.
+- Quando o dado permitir uma conta simples e verificável, mostre a conta.
+- Prefira exemplos com valores redondos e realistas para o Brasil.
+- Se houver contradição entre fontes, aponte a contradição em vez de escolher uma.
+
+ÂNGULO PEDIDO PELO EDITOR
+ANGLE_PLACEHOLDER
+
+DADOS OFICIAIS JÁ VERIFICADOS (use à vontade, vêm do Banco Central e do IBGE)
+MACRO_PLACEHOLDER
+
+LISTA DE FATOS APURADOS
+LEDGER_PLACEHOLDER
+
+HTML PERMITIDO no body_html
+p, h2, h3, h4, ul, ol, li, strong, em, a, blockquote, table, thead, tbody, tr, th,
+td, caption, small.
+Não escreva <h1>: o tema do site já publica o título.
+Não escreva a seção de fontes nem lista de links de veículos: ela é montada
+automaticamente depois, fora do seu texto.
+Não insira imagens.
+
+RESPONDA SOMENTE JSON VÁLIDO com exatamente estas chaves:
+{
+  "title": "H1 do artigo, até 70 caracteres, promete apenas o que o texto entrega",
+  "seo_title": "título para a página de resultados, até 60 caracteres, palavra-chave no começo",
+  "focus_keyword": "a busca principal que este texto atende, 2 a 5 palavras",
+  "slug": "minusculas-com-hifen-sem-acento-ate-80-caracteres",
+  "category": "financas ou seguros",
+  "tags": ["3 a 6 temas ou entidades, em minúsculas"],
+  "excerpt": "meta description entre 140 e 155 caracteres, contendo a palavra-chave",
+  "takeaways": ["3 a 5 frases curtas de o que muda no bolso do leitor"],
+  "body_html": "o artigo completo em HTML",
+  "faq": [{"question": "...", "answer": "..."}],
+  "image_alt": "descrição objetiva para a imagem de capa, até 120 caracteres"
+}
+"""
+
+_VERIFY_PROMPT = """Você é o checador de fatos da redação do Bolso Coberto.
+
+Compare o RASCUNHO com a LISTA DE FATOS. Para cada número, percentual, valor em
+reais, data, nome próprio e citação que aparece no rascunho, classifique:
+- "unsupported": não existe na lista de fatos
+- "distorted": existe na lista, mas o rascunho mudou o valor, o período, a unidade
+  ou a quem o dado pertence
+
+Não reporte:
+- números de contas explicativas genéricas (ex.: "divida por 12", "são 30 dias")
+- valores hipotéticos claramente marcados como exemplo
+- os blocos identificados como cálculo do Bolso Coberto
+- dados que constam na lista de fatos oficiais do Banco Central e do IBGE
+
+Responda SOMENTE JSON válido:
+{"issues": [{"excerpt": "trecho literal do rascunho", "kind": "unsupported ou distorted", "why": "explicação em uma frase"}],
+ "verdict": "ok ou revisar"}
+
+LISTA DE FATOS
+LEDGER_PLACEHOLDER
+
+FATOS OFICIAIS
+MACRO_PLACEHOLDER
+
+RASCUNHO
+DRAFT_PLACEHOLDER
+"""
 
 
-class GeminiDraft:
+class EditorialLLM:
+    """Pipeline editorial em três passagens.
+
+    A separação existe por um motivo concreto: o redator só recebe a trilha de
+    fatos, nunca a prosa da fonte, então parafrasear frase a frase deixa de ser
+    possível por construção em vez de por instrução.
+    """
+
     def __init__(self) -> None:
         self.api_key = settings.gemini_api_key.get_secret_value().strip()
         self.model = settings.llm_model.strip() or "gemini-3.5-flash"
 
-    async def write(
+    async def _generate(
         self,
+        prompt: str,
         *,
-        facts: list[tuple[str, str]],
-        angle: str | None,
+        temperature: float,
+        max_output_tokens: int,
     ) -> dict[str, Any]:
         if not self.api_key:
             raise DomainError("GEMINI_API_KEY não configurada.")
-        blocks = []
-        for url, text in facts:
-            blocks.append(f"URL: {url}\nTRECHO:\n{text[:12000]}")
-        prompt = _PROMPT.replace(
-            "ANGLE_PLACEHOLDER", (angle or "").strip() or "(nenhum)"
-        ).replace("FACTS_PLACEHOLDER", "\n\n".join(blocks))
         payload: dict[str, Any] = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generationConfig": {
-                "temperature": 0.4,
-                "maxOutputTokens": 4096,
+                "temperature": temperature,
+                "maxOutputTokens": max_output_tokens,
                 "responseMimeType": "application/json",
             },
         }
@@ -108,35 +231,188 @@ class GeminiDraft:
             )
             raise DomainError(_gemini_refusal_message(response))
         data = response.json()
-        text = _first_text(data)
-        parsed = _parse_json_object(text)
-        category = str(parsed.get("category") or "").strip().lower()
-        if category not in {"financas", "seguros"}:
-            category = "financas"
-        title = str(parsed.get("title") or "").strip()
-        slug = _slugify(str(parsed.get("slug") or title))
-        excerpt = str(parsed.get("excerpt") or "").strip()[:155]
-        body = sanitize_html(str(parsed.get("body_html") or ""))
-        sources_raw = parsed.get("sources") or []
-        sources: list[dict[str, str]] = []
-        if isinstance(sources_raw, list):
-            for item in sources_raw:
+        _assert_complete(data)
+        return _parse_json_object(_first_text(data))
+
+    async def extract_facts(self, sources: list[tuple[str, str]]) -> list[dict[str, str]]:
+        blocks = [
+            f"URL: {url}\nTEXTO:\n{text[:MAX_SOURCE_CHARS]}" for url, text in sources
+        ]
+        parsed = await self._generate(
+            _EXTRACT_PROMPT.replace("FACTS_PLACEHOLDER", "\n\n---\n\n".join(blocks)),
+            temperature=0.1,
+            max_output_tokens=8192,
+        )
+        raw_facts = parsed.get("facts")
+        if not isinstance(raw_facts, list):
+            raise DomainError("Extração de fatos não devolveu lista.")
+        facts: list[dict[str, str]] = []
+        for item in raw_facts:
+            if not isinstance(item, dict):
+                continue
+            claim = str(item.get("claim") or "").strip()
+            if not claim:
+                continue
+            facts.append(
+                {
+                    "claim": claim[:400],
+                    "value": str(item.get("value") or "").strip()[:80],
+                    "unit": str(item.get("unit") or "").strip()[:40],
+                    "period": str(item.get("period") or "").strip()[:80],
+                    "entity": str(item.get("entity") or "").strip()[:120],
+                    "primary_source": str(item.get("primary_source") or "").strip()[:200],
+                    "primary_source_url": _http_or_blank(item.get("primary_source_url")),
+                    "source_url": str(item.get("source_url") or "").strip()[:600],
+                }
+            )
+        if not facts:
+            raise DomainError("Nenhum fato verificável foi extraído das fontes.")
+        return facts
+
+    async def write(
+        self,
+        *,
+        ledger: list[dict[str, str]],
+        macro_facts: list[str],
+        angle: str | None,
+        topic: str | None,
+        content_type: ContentType,
+    ) -> dict[str, Any]:
+        default_topic = (
+            "Escreva a partir dos fatos apurados abaixo."
+            if ledger
+            else "(sem tema definido)"
+        )
+        prompt = (
+            _WRITE_PROMPT.replace("OUTLINE_PLACEHOLDER", _OUTLINES[content_type])
+            .replace("TOPIC_PLACEHOLDER", (topic or "").strip() or default_topic)
+            .replace("ANGLE_PLACEHOLDER", (angle or "").strip() or "(nenhum, use seu julgamento)")
+            .replace("MACRO_PLACEHOLDER", _render_macro(macro_facts))
+            .replace("LEDGER_PLACEHOLDER", _render_ledger(ledger))
+        )
+        parsed = await self._generate(
+            prompt,
+            temperature=0.5,
+            max_output_tokens=settings.llm_max_output_tokens,
+        )
+        return _normalize_draft(parsed)
+
+    async def verify(
+        self,
+        *,
+        body_html: str,
+        ledger: list[dict[str, str]],
+        macro_facts: list[str],
+    ) -> dict[str, Any]:
+        prompt = (
+            _VERIFY_PROMPT.replace("LEDGER_PLACEHOLDER", _render_ledger(ledger))
+            .replace("MACRO_PLACEHOLDER", _render_macro(macro_facts))
+            .replace("DRAFT_PLACEHOLDER", body_html[:40_000])
+        )
+        parsed = await self._generate(prompt, temperature=0.0, max_output_tokens=4096)
+        raw_issues = parsed.get("issues")
+        issues: list[dict[str, str]] = []
+        if isinstance(raw_issues, list):
+            for item in raw_issues:
                 if not isinstance(item, dict):
                     continue
-                href = str(item.get("url") or "").strip()
-                label = str(item.get("label") or href).strip()[:200]
-                if href.startswith("http"):
-                    sources.append({"url": href[:2048], "label": label})
-        if not title or not body:
-            raise DomainError("LLM devolveu rascunho incompleto.")
-        return {
-            "title": title[:200],
-            "slug": slug[:80],
-            "category": category,
-            "excerpt": excerpt,
-            "body_html": body,
-            "sources": sources,
-        }
+                excerpt = str(item.get("excerpt") or "").strip()
+                if not excerpt:
+                    continue
+                kind = str(item.get("kind") or "").strip().lower()
+                issues.append(
+                    {
+                        "excerpt": excerpt[:300],
+                        "kind": kind if kind in {"unsupported", "distorted"} else "unsupported",
+                        "why": str(item.get("why") or "").strip()[:300],
+                    }
+                )
+        verdict = "revisar" if issues else "ok"
+        return {"issues": issues, "verdict": verdict}
+
+
+def _render_ledger(ledger: list[dict[str, str]]) -> str:
+    lines: list[str] = []
+    for index, fact in enumerate(ledger, start=1):
+        parts = [f"[{index}] {fact.get('claim', '')}"]
+        value = fact.get("value") or ""
+        unit = fact.get("unit") or ""
+        if value:
+            parts.append(f"valor={value}{(' ' + unit) if unit else ''}")
+        if fact.get("period"):
+            parts.append(f"período={fact['period']}")
+        if fact.get("entity"):
+            parts.append(f"quem={fact['entity']}")
+        if fact.get("primary_source"):
+            parts.append(f"fonte primária={fact['primary_source']}")
+        lines.append(" | ".join(parts))
+    return "\n".join(lines) if lines else "(vazio)"
+
+
+def _render_macro(macro_facts: list[str]) -> str:
+    return "\n".join(f"- {fact}" for fact in macro_facts) if macro_facts else "(nenhum)"
+
+
+def _http_or_blank(value: Any) -> str:
+    text = str(value or "").strip()
+    return text[:2048] if text.startswith("http") else ""
+
+
+def _normalize_draft(parsed: dict[str, Any]) -> dict[str, Any]:
+    title = str(parsed.get("title") or "").strip()
+    body = sanitize_html(str(parsed.get("body_html") or ""))
+    if not title or not body:
+        raise DomainError("LLM devolveu rascunho incompleto.")
+
+    category = str(parsed.get("category") or "").strip().lower()
+    if category not in {"financas", "seguros"}:
+        category = "financas"
+
+    seo_title = str(parsed.get("seo_title") or title).strip()[:70]
+    excerpt = str(parsed.get("excerpt") or "").strip()[:158]
+
+    return {
+        "title": title[:200],
+        "seo_title": seo_title,
+        "focus_keyword": str(parsed.get("focus_keyword") or "").strip()[:120],
+        "slug": slugify(str(parsed.get("slug") or title))[:80],
+        "category": category,
+        "tags": _string_list(parsed.get("tags"), limit=6, max_len=60),
+        "excerpt": excerpt,
+        "takeaways": _string_list(parsed.get("takeaways"), limit=5, max_len=220),
+        "body_html": body,
+        "faq": _faq_list(parsed.get("faq")),
+        "image_alt": str(parsed.get("image_alt") or title).strip()[:120],
+    }
+
+
+def _string_list(raw: Any, *, limit: int, max_len: int) -> list[str]:
+    if not isinstance(raw, list):
+        return []
+    items: list[str] = []
+    for entry in raw:
+        text = str(entry or "").strip()
+        if text:
+            items.append(text[:max_len])
+        if len(items) >= limit:
+            break
+    return items
+
+
+def _faq_list(raw: Any) -> list[dict[str, str]]:
+    if not isinstance(raw, list):
+        return []
+    items: list[dict[str, str]] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        question = str(entry.get("question") or "").strip()
+        answer = str(entry.get("answer") or "").strip()
+        if question and answer:
+            items.append({"question": question[:300], "answer": answer[:1200]})
+        if len(items) >= 6:
+            break
+    return items
 
 
 def _gemini_refusal_message(response: httpx.Response) -> str:
@@ -165,7 +441,23 @@ def _gemini_refusal_message(response: httpx.Response) -> str:
         return "Gemini recusou a chave (403)."
     if response.status_code == 404:
         return "Modelo Gemini não encontrado. Confira LLM_MODEL."
+    if response.status_code == 429:
+        return "Cota do Gemini estourada. Tente de novo em alguns minutos."
     return "LLM recusou a geração."
+
+
+def _assert_complete(payload: dict[str, Any]) -> None:
+    try:
+        reason = str(payload["candidates"][0].get("finishReason") or "")
+    except (KeyError, IndexError, TypeError):
+        return
+    if reason == "MAX_TOKENS":
+        raise DomainError(
+            "A resposta do LLM foi cortada no limite de tokens. "
+            "Aumente LLM_MAX_OUTPUT_TOKENS ou reduza o número de fontes."
+        )
+    if reason == "SAFETY":
+        raise DomainError("O filtro de segurança do Gemini bloqueou esta pauta.")
 
 
 def _first_text(payload: dict[str, Any]) -> str:
@@ -190,21 +482,8 @@ def _parse_json_object(raw: str) -> dict[str, Any]:
     return data
 
 
-def _slugify(value: str) -> str:
-    normalized = value.lower().strip()
-    translated = (
-        normalized.replace("á", "a")
-        .replace("à", "a")
-        .replace("ã", "a")
-        .replace("â", "a")
-        .replace("é", "e")
-        .replace("ê", "e")
-        .replace("í", "i")
-        .replace("ó", "o")
-        .replace("ô", "o")
-        .replace("õ", "o")
-        .replace("ú", "u")
-        .replace("ç", "c")
-    )
-    slug = re.sub(r"[^a-z0-9]+", "-", translated).strip("-")
+def slugify(value: str) -> str:
+    folded = unicodedata.normalize("NFKD", (value or "").lower().strip())
+    ascii_only = "".join(char for char in folded if not unicodedata.combining(char))
+    slug = re.sub(r"[^a-z0-9]+", "-", ascii_only).strip("-")
     return slug or "rascunho"

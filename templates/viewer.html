@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ job.title or "Job" }}{% endblock %}
 {% block body %}
-  <p class="muted">{{ job.status }} · {{ job.id }}</p>
+  <p class="muted">{{ job.status }} · {{ job.content_type }} · {{ job.id }}</p>
   {% if job.error_message %}
     <p class="warn">{{ job.error_message }}</p>
   {% endif %}
@@ -10,14 +10,83 @@
     <script>setTimeout(function () { location.reload(); }, 4000);</script>
   {% endif %}
 
-  <h2>Fontes</h2>
+  {% if blocking %}
+  <section class="warn-box">
+    <h2>Publicação bloqueada</h2>
+    <ul>{% for reason in blocking %}<li>{{ reason }}</li>{% endfor %}</ul>
+  </section>
+  {% endif %}
+
+  {% if job.verification_issues() %}
+  <section class="warn-box">
+    <h2>Checagem de fatos</h2>
+    <p>Cada item abaixo é um dado do texto que não tem lastro na trilha de fatos apurada.</p>
+    <ul>
+      {% for issue in job.verification_issues() %}
+        <li><strong>{{ issue.kind }}</strong> — “{{ issue.excerpt }}”<br>
+          <span class="muted">{{ issue.why }}</span></li>
+      {% endfor %}
+    </ul>
+    <form method="post" action="/jobs/{{ job.id }}/clear-issue"
+          onsubmit="return confirm('Você conferiu cada apontamento na mão?');">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button type="submit">Conferi tudo, liberar</button>
+    </form>
+  </section>
+  {% endif %}
+
+  {% if job.similarity_max is not none %}
+  <section class="{% if job.similarity_max > threshold %}warn-box{% else %}info-box{% endif %}">
+    <h2>Originalidade</h2>
+    <p>{{ "%.1f"|format(job.similarity_max * 100) }}% do texto coincide com alguma fonte
+      (limite: {{ "%.0f"|format(threshold * 100) }}%). {{ words }} palavras.</p>
+    {% set sim = job.similarity_json or {} %}
+    {% if sim.longest_run_words and sim.longest_run_words > 12 %}
+      <p class="muted">Maior trecho repetido ({{ sim.longest_run_words }} palavras):
+        “{{ sim.longest_run_text }}”</p>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  <h2>Fontes de pauta</h2>
   <ul>
     {% for src in job.sources %}
       <li>{{ src.fetch_status }} · <a href="{{ src.url }}" rel="nofollow noopener" target="_blank">{{ src.url }}</a>
         {% if src.error_message %}<br><span class="warn">{{ src.error_message }}</span>{% endif %}
       </li>
+    {% else %}
+      <li class="muted">Pauta sem URL (guia evergreen).</li>
     {% endfor %}
   </ul>
+
+  {% if job.fact_ledger_json %}
+  <details>
+    <summary>Trilha de fatos ({{ job.fact_ledger_json|length }})</summary>
+    <p class="muted">É isso, e só isso, que o redator recebeu. Guarde como prova de apuração.</p>
+    <ol class="ledger">
+      {% for fact in job.fact_ledger_json %}
+        <li>{{ fact.claim }}
+          <span class="muted">
+            {% if fact.value %}· {{ fact.value }} {{ fact.unit }}{% endif %}
+            {% if fact.period %}· {{ fact.period }}{% endif %}
+            {% if fact.primary_source %}· fonte primária: {{ fact.primary_source }}{% endif %}
+          </span>
+        </li>
+      {% endfor %}
+    </ol>
+  </details>
+  {% endif %}
+
+  {% if job.internal_links_json %}
+  <details>
+    <summary>Links internos inseridos ({{ job.internal_links_json|length }})</summary>
+    <ul>
+      {% for link in job.internal_links_json %}
+        <li>“{{ link.phrase }}” → <a href="{{ link.url }}" rel="noopener" target="_blank">{{ link.title }}</a></li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
 
   {% if job.status == "failed" or job.status == "needs_review" %}
   <section class="actions">
@@ -39,25 +108,40 @@
   {% endif %}
 
   {% if job.status == "needs_review" or job.status == "applied" or (job.title and job.body_html) %}
+  {% set locked = job.status == "applied" %}
   <form method="post" action="/jobs/{{ job.id }}/save">
     <input type="hidden" name="csrf" value="{{ csrf }}">
-    <label>Título</label>
-    <input name="title" value="{{ job.title or "" }}" required {% if job.status == "applied" %}readonly{% endif %}>
+    <label>Título (H1)</label>
+    <input name="title" value="{{ job.title or "" }}" required {% if locked %}readonly{% endif %}>
+    <label>Título de SEO (até 60 caracteres, aparece na busca)</label>
+    <input name="seo_title" value="{{ job.seo_title or "" }}" maxlength="70" {% if locked %}readonly{% endif %}>
+    <label>Palavra-chave principal</label>
+    <input name="focus_keyword" value="{{ job.focus_keyword or "" }}" maxlength="120" {% if locked %}readonly{% endif %}>
     <label>Slug</label>
-    <input name="slug" value="{{ job.slug or "" }}" required {% if job.status == "applied" %}readonly{% endif %}>
+    <input name="slug" value="{{ job.slug or "" }}" required {% if locked %}readonly{% endif %}>
     <label>Categoria</label>
-    <select name="category_slug" {% if job.status == "applied" %}disabled{% endif %}>
+    <select name="category_slug" {% if locked %}disabled{% endif %}>
       <option value="financas" {% if job.category_slug == "financas" %}selected{% endif %}>Finanças</option>
       <option value="seguros" {% if job.category_slug == "seguros" %}selected{% endif %}>Seguros</option>
     </select>
-    <label>Meta (excerpt)</label>
-    <input name="excerpt" value="{{ job.excerpt or "" }}" maxlength="155" {% if job.status == "applied" %}readonly{% endif %}>
+    <label>Tags (separadas por vírgula)</label>
+    <input name="tags" value="{{ (job.tags_json or [])|join(', ') }}" {% if locked %}readonly{% endif %}>
+    <label>Meta description (140 a 155 caracteres)</label>
+    <input name="excerpt" value="{{ job.excerpt or "" }}" maxlength="158" {% if locked %}readonly{% endif %}>
     <label>Corpo (HTML)</label>
-    <textarea name="body_html" rows="18" {% if job.status == "applied" %}readonly{% endif %}>{{ job.body_html or "" }}</textarea>
-    {% if job.status != "applied" %}
+    <textarea name="body_html" rows="24" {% if locked %}readonly{% endif %}>{{ job.body_html or "" }}</textarea>
+    {% if not locked %}
       <button type="submit">Salvar edição</button>
     {% endif %}
   </form>
+
+  {% if job.hero_image_bytes %}
+  <section class="preview">
+    <h2>Capa (1200×675)</h2>
+    <img src="/jobs/{{ job.id }}/hero.jpg" alt="{{ job.hero_image_alt or '' }}" width="600">
+    <p class="muted">{{ job.hero_image_alt }}</p>
+  </section>
+  {% endif %}
 
   <section class="preview">
     <h2>Preview</h2>
@@ -71,11 +155,16 @@
   {% if job.status == "needs_review" %}
   <form method="post" action="/jobs/{{ job.id }}/apply" onsubmit="return confirm('Criar rascunho no WordPress?');">
     <input type="hidden" name="csrf" value="{{ csrf }}">
-    <button type="submit" class="primary">Aplicar rascunho no WP</button>
+    <button type="submit" class="primary" {% if blocking %}disabled{% endif %}>
+      {% if job.wp_post_id %}Atualizar rascunho no WP{% else %}Aplicar rascunho no WP{% endif %}
+    </button>
+    {% if blocking %}<p class="muted">Resolva os bloqueios acima para liberar.</p>{% endif %}
   </form>
   {% endif %}
   {% if job.wp_post_id %}
-    <p>Rascunho WP id {{ job.wp_post_id }} — publique no admin.</p>
+    <p>Rascunho WP id {{ job.wp_post_id }}
+      {% if job.wp_post_url %}· <a href="{{ job.wp_post_url }}" rel="noopener" target="_blank">abrir</a>{% endif %}
+      — revise e publique no admin.</p>
   {% endif %}
   {% endif %}
 {% endblock %}

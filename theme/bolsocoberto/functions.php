@@ -41,6 +41,12 @@ function bolsocoberto_enqueue(): void
         ['bolsocoberto-parent'],
         BOLSCOBERTO_THEME_VERSION
     );
+    wp_enqueue_style(
+        'bolsocoberto-content',
+        get_stylesheet_directory_uri() . '/assets/content.css',
+        ['bolsocoberto'],
+        BOLSCOBERTO_THEME_VERSION
+    );
 }
 add_action('wp_enqueue_scripts', 'bolsocoberto_enqueue');
 
@@ -52,9 +58,83 @@ function bolsocoberto_head_icons(): void
     echo '<link rel="apple-touch-icon" href="' . esc_url($base . '/apple-touch-icon.png') . '">' . "\n";
     echo '<link rel="manifest" href="' . esc_url($base . '/site.webmanifest') . '">' . "\n";
     echo '<meta name="theme-color" content="#0F7A4B">' . "\n";
-    echo '<link rel="canonical" href="' . esc_url(is_singular() ? get_permalink() : home_url('/')) . '">' . "\n";
+
+    // O Rank Math já emite canonical. Dois canonicals na mesma página fazem o
+    // Google descartar o sinal, então só emitimos quando ele não está no ar.
+    if (!defined('RANK_MATH_VERSION')) {
+        echo '<link rel="canonical" href="'
+            . esc_url(is_singular() ? get_permalink() : home_url('/'))
+            . '">' . "\n";
+    }
 }
 add_action('wp_head', 'bolsocoberto_head_icons', 1);
+
+/**
+ * Uma unidade de anúncio. Devolve string vazia enquanto o AdSense não estiver
+ * configurado, para o site não exibir buraco reservado sem preenchimento.
+ */
+function bolsocoberto_ad_unit(string $slot_option): string
+{
+    $publisher = trim((string) get_option('bolso_adsense_publisher_id', ''));
+    $slot = trim((string) get_option($slot_option, ''));
+    if ($publisher === '' || $slot === '') {
+        return '';
+    }
+
+    return sprintf(
+        '<div class="bc-ad"><span class="bc-ad__label">Publicidade</span>'
+        . '<ins class="adsbygoogle" style="display:block" data-ad-client="%s" '
+        . 'data-ad-slot="%s" data-ad-format="auto" data-full-width-responsive="true"></ins>'
+        . '<script>(adsbygoogle=window.adsbygoogle||[]).push({});</script></div>',
+        esc_attr($publisher),
+        esc_attr($slot)
+    );
+}
+
+/**
+ * Insere anúncio antes do 2º e do 4º <h2>.
+ *
+ * A quebra de H2 é onde o leitor faz pausa, então converte melhor que anúncio
+ * empurrado no meio do parágrafo. A altura reservada no CSS existe para o
+ * carregamento do anúncio não empurrar o texto e destruir o CLS.
+ */
+function bolsocoberto_inject_ads(string $content): string
+{
+    if (!is_singular('post') || !in_the_loop() || !is_main_query() || is_feed()) {
+        return $content;
+    }
+
+    // parts[0] é a abertura; parts[n] começa no n-ésimo <h2>. Inserir antes do
+    // índice 2 e do 4 coloca o anúncio imediatamente antes do 2º e do 4º título.
+    $parts = preg_split('#(?=<h2[\s>])#i', $content);
+    if (!is_array($parts) || count($parts) < 3) {
+        return $content;
+    }
+
+    $slots = [2 => 'bolso_adsense_slot_top', 4 => 'bolso_adsense_slot_mid'];
+    $output = '';
+    foreach ($parts as $index => $part) {
+        if (isset($slots[$index])) {
+            $output .= bolsocoberto_ad_unit($slots[$index]);
+        }
+        $output .= $part;
+    }
+    return $output;
+}
+add_filter('the_content', 'bolsocoberto_inject_ads', 20);
+
+function bolsocoberto_adsense_loader(): void
+{
+    $publisher = trim((string) get_option('bolso_adsense_publisher_id', ''));
+    if ($publisher === '' || is_admin()) {
+        return;
+    }
+    printf(
+        '<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=%s" crossorigin="anonymous"></script>' . "\n",
+        esc_attr(rawurlencode($publisher))
+    );
+}
+add_action('wp_head', 'bolsocoberto_adsense_loader', 20);
 
 function bolsocoberto_seed_menu(): void
 {
@@ -69,9 +149,14 @@ function bolsocoberto_seed_menu(): void
         $menu_id = (int) $menu->term_id;
     }
 
+    // O seed roda de novo a cada higiene; sem limpar antes, cada execução
+    // empilha uma cópia dos mesmos itens no menu.
+    foreach (wp_get_nav_menu_items($menu_id) ?: [] as $existing_item) {
+        wp_delete_post((int) $existing_item->ID, true);
+    }
+
     $financas = get_category_by_slug('financas');
     $seguros = get_category_by_slug('seguros');
-    $sobre = get_page_by_path('sobre');
 
     $items = [];
     if ($financas) {
@@ -80,8 +165,11 @@ function bolsocoberto_seed_menu(): void
     if ($seguros) {
         $items[] = ['title' => 'Seguros', 'url' => get_category_link($seguros)];
     }
-    if ($sobre instanceof WP_Post) {
-        $items[] = ['title' => 'Sobre', 'url' => get_permalink($sobre)];
+    foreach (['sobre' => 'Sobre', 'contato' => 'Contato'] as $slug => $label) {
+        $page = get_page_by_path($slug);
+        if ($page instanceof WP_Post) {
+            $items[] = ['title' => $label, 'url' => get_permalink($page)];
+        }
     }
 
     foreach ($items as $item) {

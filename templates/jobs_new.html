@@ -2,13 +2,59 @@
 {% block title %}Nova pauta{% endblock %}
 {% block body %}
   <h1>Nova pauta</h1>
-  <p>Cole uma ou mais URLs da <strong>mesma</strong> notícia. O worker extrai fatos e escreve texto original. Não republicamos o artigo.</p>
+
+  {% if cannibals %}
+  <section class="warn-box">
+    <h2>O site já cobre isso</h2>
+    <p>Publicar um texto quase igual divide a autoridade entre duas URLs e engorda a
+      contagem de páginas finas. Atualizar o post existente costuma render mais.</p>
+    <ul>
+      {% for post in cannibals %}
+        <li>
+          <a href="{{ post.link }}" rel="noopener" target="_blank">{{ post.title }}</a>
+          <span class="muted">· id {{ post.wp_post_id }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
   <form method="post" action="/jobs">
     <input type="hidden" name="csrf" value="{{ csrf }}">
-    <label for="urls">URLs (uma por linha)</label>
-    <textarea id="urls" name="urls" rows="8" required placeholder="https://..."></textarea>
+
+    <label for="content_type">Tipo de conteúdo</label>
+    <select id="content_type" name="content_type">
+      {% for value, label in content_types.items() %}
+        <option value="{{ value }}" {% if selected_type == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <p class="muted">
+      A notícia é o gancho, não o produto. O explicativo é o formato padrão: parte do
+      fato e entrega o que ele muda no bolso do leitor. O guia evergreen dispensa URL
+      e é o que sustenta a receita ao longo do tempo.
+    </p>
+
+    <label for="urls">URLs de pauta (uma por linha)</label>
+    <textarea id="urls" name="urls" rows="6" placeholder="https://...">{{ form.urls or "" }}</textarea>
+    <p class="muted">O worker extrai os fatos e descarta a prosa. O redator nunca vê o texto original.</p>
+
+    <label for="topic">Tema (obrigatório no guia evergreen)</label>
+    <input id="topic" name="topic" maxlength="300" value="{{ form.topic or '' }}"
+           placeholder="Ex.: vale a pena contratar seguro de vida resgatável">
+
     <label for="angle">Ângulo (opcional)</label>
-    <input id="angle" name="angle" maxlength="500" placeholder="Ex.: impacto no bolso de quem tem seguro auto">
-    <button type="submit">Enfileirar</button>
+    <input id="angle" name="angle" maxlength="500" value="{{ form.angle or '' }}"
+           placeholder="Ex.: impacto no bolso de quem tem seguro auto">
+
+    <label for="update_target_post_id">Atualizar post existente (id do WordPress, opcional)</label>
+    <input id="update_target_post_id" name="update_target_post_id" inputmode="numeric"
+           placeholder="deixe vazio para criar um post novo">
+
+    {% if cannibals %}
+      <input type="hidden" name="confirm_duplicate" value="1">
+      <button type="submit">Criar mesmo assim</button>
+    {% else %}
+      <button type="submit">Enfileirar</button>
+    {% endif %}
   </form>
 {% endblock %}

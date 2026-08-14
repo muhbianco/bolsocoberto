@@ -44,10 +44,18 @@ x-app-env: &app_env
 
   GEMINI_API_KEY: ""
   LLM_MODEL: gemini-3.5-flash
+  LLM_MAX_OUTPUT_TOKENS: "16384"
+  SIMILARITY_BLOCK_THRESHOLD: "0.12"
 
   WP_BASE_URL: https://bolsocoberto.com.br
   WP_APP_USER: ""
   WP_APP_PASSWORD: ""
+  WP_AUTHOR_ID: "0"
+  WP_INDEX_TTL_MINUTES: "60"
+
+  BCB_API_BASE: https://api.bcb.gov.br
+  BCB_TIMEOUT_SECONDS: "10"
+  HERO_IMAGE_ENABLED: "true"
 
 services:
   bolso_editor:

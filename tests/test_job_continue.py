@@ -1,15 +1,38 @@
 from __future__ import annotations
 
+import pytest
+
 from app.models.job import EditorJob, EditorJobSource, FetchStatus, JobStatus
-from app.services.llm import _PROMPT
+from app.services.llm import _EXTRACT_PROMPT, _VERIFY_PROMPT, _WRITE_PROMPT
 
 
-def test_prompt_uses_placeholders_not_str_format() -> None:
-    assert "ANGLE_PLACEHOLDER" in _PROMPT
-    assert "FACTS_PLACEHOLDER" in _PROMPT
-    assert "{angle}" not in _PROMPT
-    assert "{facts}" not in _PROMPT
-    assert "{url" not in _PROMPT
+@pytest.mark.parametrize(
+    ("prompt", "placeholders"),
+    [
+        (_EXTRACT_PROMPT, ["FACTS_PLACEHOLDER"]),
+        (
+            _WRITE_PROMPT,
+            [
+                "OUTLINE_PLACEHOLDER",
+                "TOPIC_PLACEHOLDER",
+                "ANGLE_PLACEHOLDER",
+                "MACRO_PLACEHOLDER",
+                "LEDGER_PLACEHOLDER",
+            ],
+        ),
+        (_VERIFY_PROMPT, ["LEDGER_PLACEHOLDER", "MACRO_PLACEHOLDER", "DRAFT_PLACEHOLDER"]),
+    ],
+)
+def test_prompts_use_placeholders_not_str_format(prompt: str, placeholders: list[str]) -> None:
+    for token in placeholders:
+        assert token in prompt
+    assert "{angle}" not in prompt
+    assert "{facts}" not in prompt
+
+
+def test_write_prompt_forbids_model_written_sources() -> None:
+    # A seção de fontes é montada em código para garantir a política de link.
+    assert "Não escreva a seção de fontes" in _WRITE_PROMPT
 
 
 def test_usable_source_count_ignores_failed() -> None:

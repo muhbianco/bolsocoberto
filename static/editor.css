@@ -79,3 +79,40 @@ th, td { text-align: left; padding: 0.5rem 0.35rem; border-bottom: 1px solid #dd
   border-top: 1px solid #ddd;
 }
 h1 { font-family: Georgia, serif; }
+
+.warn-box, .info-box {
+  margin: 1.25rem 0;
+  padding: 0.9rem 1.1rem;
+  border-left: 5px solid var(--gold);
+  background: #fff;
+}
+.warn-box { border-left-color: #b3400a; }
+.info-box { border-left-color: var(--coverage); }
+.warn-box h2, .info-box h2 { margin-top: 0; font-size: 1.05rem; }
+.warn-box ul, .info-box ul { margin-bottom: 0; }
+
+button[disabled] { opacity: 0.45; cursor: not-allowed; }
+
+details { margin: 1rem 0; }
+summary { cursor: pointer; font-weight: 600; }
+.ledger li { margin-bottom: 0.4rem; }
+
+.preview img { max-width: 100%; height: auto; border: 1px solid #ddd; }
+
+/* Espelha o CSS do tema para que o preview não minta sobre o resultado. */
+.preview .bc-takeaways,
+.preview .bc-note {
+  padding: 0.85rem 1rem;
+  background: #f2f5f1;
+  border-left: 4px solid var(--coverage);
+  margin: 1.25rem 0;
+}
+.preview .bc-table-wrap { overflow-x: auto; margin: 1.5rem 0; }
+.preview .bc-table-wrap table { font-size: 0.92rem; }
+.preview .bc-table-wrap caption {
+  text-align: left;
+  font-weight: 600;
+  padding-bottom: 0.5rem;
+}
+.preview .bc-sources { color: #555; font-size: 0.9rem; }
+.preview .bc-primary-sources { margin-top: 2rem; }
