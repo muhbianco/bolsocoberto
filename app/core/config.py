@@ -4,7 +4,7 @@ from functools import lru_cache
 from typing import Literal
 from urllib.parse import quote_plus
 
-from pydantic import SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Environment = Literal["development", "staging", "production"]
@@ -42,8 +42,10 @@ class Settings(BaseSettings):
 
     gemini_api_key: SecretStr = SecretStr("")
     llm_model: str = "gemini-3.5-flash"
-    llm_timeout_seconds: float = 90.0
-    llm_max_output_tokens: int = 16384
+    # Flash 3.x com thinking default come o orçamento; 180s cobre extract+write.
+    llm_timeout_seconds: float = Field(default=180.0, ge=30.0, le=600.0)
+    # Teto real da API Gemini 3.5 Flash é 65536; valores maiores são ignorados.
+    llm_max_output_tokens: int = Field(default=65536, ge=1024, le=65536)
 
     # Contenção máxima de 8-gramas do rascunho dentro de qualquer fonte.
     # Acima disso o texto é paráfrase, não conteúdo próprio, e o apply é bloqueado.
@@ -100,6 +102,24 @@ class Settings(BaseSettings):
     @property
     def server_url(self) -> str:
         return self._dsn("asyncmy", "")
+
+    @field_validator("llm_timeout_seconds", mode="before")
+    @classmethod
+    def _clamp_llm_timeout_seconds(cls, value: object) -> float:
+        try:
+            parsed = float(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return 180.0
+        return max(30.0, min(parsed, 600.0))
+
+    @field_validator("llm_max_output_tokens", mode="before")
+    @classmethod
+    def _clamp_llm_max_output_tokens(cls, value: object) -> int:
+        try:
+            parsed = int(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return 65536
+        return max(1024, min(parsed, 65536))
 
     @model_validator(mode="after")
     def _validate_production_secrets(self) -> Settings:

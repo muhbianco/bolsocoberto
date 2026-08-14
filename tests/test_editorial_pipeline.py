@@ -210,3 +210,60 @@ class TestCalculoFinanceiro:
         assert campos is not None
         assert campos["label"] == "Selic meta"
         assert len(campos["series"]) == 4
+
+
+class TestGeminiResposta:
+    def test_teto_da_api_nao_ultrapassa_65536(self) -> None:
+        from app.services.llm import cap_output_tokens
+
+        assert cap_output_tokens(965536) == 65536
+        assert cap_output_tokens(8192) == 8192
+
+    def test_flash_3_pede_thinking_minimo(self) -> None:
+        from app.services.llm import _generation_config
+
+        config = _generation_config("gemini-3.5-flash", 0.1, 965536)
+        assert config["maxOutputTokens"] == 65536
+        assert config["thinkingConfig"] == {"thinkingLevel": "minimal"}
+        assert config["responseMimeType"] == "application/json"
+
+    def test_json_valido_nao_falha_por_max_tokens(self) -> None:
+        from app.core.exceptions import DomainError
+        from app.services.llm import _parse_generate_response
+
+        parsed = _parse_generate_response(
+            {
+                "candidates": [
+                    {
+                        "finishReason": "MAX_TOKENS",
+                        "content": {
+                            "parts": [
+                                {"thought": True, "text": "vou raciocinar"},
+                                {"text": '{"facts": [{"claim": "Selic em 15%"}]}'},
+                            ]
+                        },
+                    }
+                ]
+            }
+        )
+        assert parsed["facts"][0]["claim"] == "Selic em 15%"
+
+        with pytest.raises(DomainError, match="cortada no limite"):
+            _parse_generate_response(
+                {
+                    "candidates": [
+                        {
+                            "finishReason": "MAX_TOKENS",
+                            "content": {
+                                "parts": [{"text": '{"facts": [{"claim": "incom'}]
+                            },
+                        }
+                    ]
+                }
+            )
+
+    def test_env_astronomico_e_clampado(self) -> None:
+        from app.core.config import Settings
+
+        settings = Settings(llm_max_output_tokens=965536)
+        assert settings.llm_max_output_tokens == 65536

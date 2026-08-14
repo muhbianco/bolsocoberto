@@ -18,6 +18,13 @@ logger = get_logger(__name__)
 _GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 MAX_SOURCE_CHARS = 24_000
+# Teto da API generateContent para Gemini 3.5 Flash. Env acima disso não aumenta nada.
+GEMINI_MAX_OUTPUT_TOKENS = 65_536
+_MAX_TOKENS_MESSAGE = (
+    "A resposta do LLM foi cortada no limite de tokens. "
+    "O Gemini 3.5 Flash reserva parte do orçamento para raciocínio interno; "
+    "reduza o número de fontes ou tente de novo."
+)
 
 
 class ContentType(StrEnum):
@@ -205,11 +212,9 @@ class EditorialLLM:
             raise DomainError("GEMINI_API_KEY não configurada.")
         payload: dict[str, Any] = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "temperature": temperature,
-                "maxOutputTokens": max_output_tokens,
-                "responseMimeType": "application/json",
-            },
+            "generationConfig": _generation_config(
+                self.model, temperature, max_output_tokens
+            ),
         }
         url = _GEMINI_URL.format(model=self.model)
         timeout = httpx.Timeout(settings.llm_timeout_seconds, connect=10.0)
@@ -230,9 +235,7 @@ class EditorialLLM:
                 extra={"status": response.status_code, "body": (response.text or "")[:400]},
             )
             raise DomainError(_gemini_refusal_message(response))
-        data = response.json()
-        _assert_complete(data)
-        return _parse_json_object(_first_text(data))
+        return _parse_generate_response(response.json())
 
     async def extract_facts(self, sources: list[tuple[str, str]]) -> list[dict[str, str]]:
         blocks = [
@@ -241,7 +244,7 @@ class EditorialLLM:
         parsed = await self._generate(
             _EXTRACT_PROMPT.replace("FACTS_PLACEHOLDER", "\n\n---\n\n".join(blocks)),
             temperature=0.1,
-            max_output_tokens=8192,
+            max_output_tokens=settings.llm_max_output_tokens,
         )
         raw_facts = parsed.get("facts")
         if not isinstance(raw_facts, list):
@@ -309,7 +312,7 @@ class EditorialLLM:
             .replace("MACRO_PLACEHOLDER", _render_macro(macro_facts))
             .replace("DRAFT_PLACEHOLDER", body_html[:40_000])
         )
-        parsed = await self._generate(prompt, temperature=0.0, max_output_tokens=4096)
+        parsed = await self._generate(prompt, temperature=0.0, max_output_tokens=8192)
         raw_issues = parsed.get("issues")
         issues: list[dict[str, str]] = []
         if isinstance(raw_issues, list):
@@ -446,26 +449,94 @@ def _gemini_refusal_message(response: httpx.Response) -> str:
     return "LLM recusou a geração."
 
 
-def _assert_complete(payload: dict[str, Any]) -> None:
+def _generation_config(
+    model: str, temperature: float, max_output_tokens: int
+) -> dict[str, Any]:
+    config: dict[str, Any] = {
+        "temperature": temperature,
+        "maxOutputTokens": cap_output_tokens(max_output_tokens),
+        "responseMimeType": "application/json",
+        "thinkingConfig": _thinking_config(model),
+    }
+    return config
+
+
+def cap_output_tokens(requested: int) -> int:
+    return max(256, min(int(requested), GEMINI_MAX_OUTPUT_TOKENS))
+
+
+def _thinking_config(model: str) -> dict[str, Any]:
+    name = (model or "").strip().lower()
+    # 2.5 não aceita thinkingLevel; budget 0 desliga o raciocínio.
+    if name.startswith("gemini-2."):
+        return {"thinkingBudget": 0}
+    # 3.x Flash default é medium e esses tokens entram em maxOutputTokens.
+    return {"thinkingLevel": "minimal"}
+
+
+def _finish_reason(payload: dict[str, Any]) -> str:
     try:
-        reason = str(payload["candidates"][0].get("finishReason") or "")
+        return str(payload["candidates"][0].get("finishReason") or "")
     except (KeyError, IndexError, TypeError):
-        return
-    if reason == "MAX_TOKENS":
-        raise DomainError(
-            "A resposta do LLM foi cortada no limite de tokens. "
-            "Aumente LLM_MAX_OUTPUT_TOKENS ou reduza o número de fontes."
-        )
+        return ""
+
+
+def _usage_counts(payload: dict[str, Any]) -> dict[str, int]:
+    meta = payload.get("usageMetadata")
+    if not isinstance(meta, dict):
+        return {}
+    counts: dict[str, int] = {}
+    for key in (
+        "promptTokenCount",
+        "candidatesTokenCount",
+        "thoughtsTokenCount",
+        "totalTokenCount",
+    ):
+        value = meta.get(key)
+        if isinstance(value, int):
+            counts[key] = value
+    return counts
+
+
+def _parse_generate_response(payload: dict[str, Any]) -> dict[str, Any]:
+    reason = _finish_reason(payload)
+    usage = _usage_counts(payload)
+    if usage:
+        logger.info("Gemini usage", extra={"finish": reason, **usage})
     if reason == "SAFETY":
         raise DomainError("O filtro de segurança do Gemini bloqueou esta pauta.")
+    text = _first_text(payload)
+    if not text.strip():
+        if reason == "MAX_TOKENS":
+            raise DomainError(_MAX_TOKENS_MESSAGE)
+        raise DomainError("Resposta do LLM sem texto.")
+    try:
+        parsed = _parse_json_object(text)
+    except DomainError:
+        if reason == "MAX_TOKENS":
+            raise DomainError(_MAX_TOKENS_MESSAGE) from None
+        raise
+    if reason == "MAX_TOKENS":
+        logger.warning(
+            "Gemini cortou no limite, mas o JSON fechou",
+            extra={"finish": reason, **usage},
+        )
+    return parsed
 
 
 def _first_text(payload: dict[str, Any]) -> str:
     try:
         parts = payload["candidates"][0]["content"]["parts"]
-        return "".join(str(part.get("text") or "") for part in parts)
-    except (KeyError, IndexError, TypeError) as exc:
-        raise DomainError("Resposta do LLM sem texto.") from exc
+    except (KeyError, IndexError, TypeError):
+        return ""
+    chunks: list[str] = []
+    for part in parts:
+        if not isinstance(part, dict):
+            continue
+        if part.get("thought"):
+            continue
+        chunks.append(str(part.get("text") or ""))
+    return "".join(chunks)
 
 
 def _parse_json_object(raw: str) -> dict[str, Any]:
