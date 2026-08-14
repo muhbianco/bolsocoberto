@@ -283,6 +283,13 @@ class TestGeminiResposta:
         assert parsed["verdict"] == "ok"
         assert parsed["issues"] == []
 
+    def test_timeout_nao_parece_api_fora(self) -> None:
+        from app.services.llm import _network_error_message
+        import httpx
+
+        assert "demorou demais" in _network_error_message(httpx.TimeoutException("read"))
+        assert "indisponível" in _network_error_message(RuntimeError("down"))
+
     def test_checagem_quebrada_trava_apply(self) -> None:
         from app.models.job import EditorJob
 

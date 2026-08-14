@@ -42,8 +42,8 @@ class Settings(BaseSettings):
 
     gemini_api_key: SecretStr = SecretStr("")
     llm_model: str = "gemini-3.5-flash"
-    # Flash 3.x com thinking default come o orçamento; 180s cobre extract+write.
-    llm_timeout_seconds: float = Field(default=180.0, ge=30.0, le=600.0)
+    # Extract+write com Flash 3.x; 180s cortava a extração no ReadTimeout.
+    llm_timeout_seconds: float = Field(default=300.0, ge=30.0, le=600.0)
     # Teto real da API Gemini 3.5 Flash é 65536; valores maiores são ignorados.
     llm_max_output_tokens: int = Field(default=65536, ge=1024, le=65536)
 
@@ -109,7 +109,7 @@ class Settings(BaseSettings):
         try:
             parsed = float(value)  # type: ignore[arg-type]
         except (TypeError, ValueError):
-            return 180.0
+            return 300.0
         return max(30.0, min(parsed, 600.0))
 
     @field_validator("llm_max_output_tokens", mode="before")

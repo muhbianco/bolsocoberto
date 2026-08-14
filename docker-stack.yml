@@ -45,7 +45,7 @@ x-app-env: &app_env
   GEMINI_API_KEY: ""
   LLM_MODEL: gemini-3.5-flash
   LLM_MAX_OUTPUT_TOKENS: "65536"
-  LLM_TIMEOUT_SECONDS: "180"
+  LLM_TIMEOUT_SECONDS: "300"
   SIMILARITY_BLOCK_THRESHOLD: "0.12"
 
   WP_BASE_URL: https://bolsocoberto.com.br

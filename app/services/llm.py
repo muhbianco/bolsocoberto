@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import unicodedata
@@ -17,7 +18,8 @@ logger = get_logger(__name__)
 
 _GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
-MAX_SOURCE_CHARS = 24_000
+MAX_SOURCE_CHARS = 12_000
+EXTRACT_MAX_OUTPUT_TOKENS = 16_384
 # Teto da API generateContent para Gemini 3.5 Flash. Env acima disso não aumenta nada.
 GEMINI_MAX_OUTPUT_TOKENS = 65_536
 _MAX_TOKENS_MESSAGE = (
@@ -189,29 +191,6 @@ DRAFT_PLACEHOLDER
 """
 
 _STRING_SCHEMA = {"type": "string"}
-_EXTRACT_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "facts": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "claim": _STRING_SCHEMA,
-                    "value": _STRING_SCHEMA,
-                    "unit": _STRING_SCHEMA,
-                    "period": _STRING_SCHEMA,
-                    "entity": _STRING_SCHEMA,
-                    "primary_source": _STRING_SCHEMA,
-                    "primary_source_url": _STRING_SCHEMA,
-                    "source_url": _STRING_SCHEMA,
-                },
-                "required": ["claim"],
-            },
-        }
-    },
-    "required": ["facts"],
-}
 _WRITE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -292,18 +271,36 @@ class EditorialLLM:
             ),
         }
         url = _GEMINI_URL.format(model=self.model)
-        timeout = httpx.Timeout(settings.llm_timeout_seconds, connect=10.0)
-        try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.post(
-                    url,
-                    params={"key": self.api_key},
-                    headers={"Content-Type": "application/json"},
-                    json=payload,
+        timeout = httpx.Timeout(
+            connect=10.0,
+            write=30.0,
+            pool=10.0,
+            read=settings.llm_timeout_seconds,
+        )
+        response: httpx.Response | None = None
+        for attempt in range(2):
+            try:
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    response = await client.post(
+                        url,
+                        params={"key": self.api_key},
+                        headers={"Content-Type": "application/json"},
+                        json=payload,
+                    )
+                break
+            except httpx.TimeoutException as exc:
+                logger.warning(
+                    "Gemini estourou o tempo",
+                    extra={"attempt": attempt + 1},
                 )
-        except httpx.HTTPError as exc:
-            logger.exception("Falha de rede no Gemini")
-            raise DomainError("LLM indisponível agora.") from exc
+                if attempt == 1:
+                    raise DomainError(_network_error_message(exc)) from exc
+                await asyncio.sleep(1.5)
+            except httpx.HTTPError as exc:
+                logger.exception("Falha de rede no Gemini")
+                raise DomainError(_network_error_message(exc)) from exc
+        if response is None:
+            raise DomainError("LLM indisponível agora.")
         if response.status_code >= 400:
             logger.error(
                 "Gemini recusou",
@@ -319,8 +316,7 @@ class EditorialLLM:
         parsed = await self._generate(
             _EXTRACT_PROMPT.replace("FACTS_PLACEHOLDER", "\n\n---\n\n".join(blocks)),
             temperature=0.1,
-            max_output_tokens=settings.llm_max_output_tokens,
-            response_schema=_EXTRACT_SCHEMA,
+            max_output_tokens=EXTRACT_MAX_OUTPUT_TOKENS,
         )
         raw_facts = parsed.get("facts")
         if not isinstance(raw_facts, list):
@@ -533,6 +529,15 @@ def _gemini_refusal_message(response: httpx.Response) -> str:
     if response.status_code == 429:
         return "Cota do Gemini estourada. Tente de novo em alguns minutos."
     return "LLM recusou a geração."
+
+
+def _network_error_message(exc: BaseException) -> str:
+    if isinstance(exc, httpx.TimeoutException):
+        return (
+            "O Gemini demorou demais nesta passagem. "
+            "Tente de novo; se persistir, use menos fontes."
+        )
+    return "LLM indisponível agora."
 
 
 def _generation_config(
