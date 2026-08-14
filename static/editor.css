@@ -67,4 +67,15 @@ th, td { text-align: left; padding: 0.5rem 0.35rem; border-bottom: 1px solid #dd
   border-top: 3px solid var(--gold);
 }
 .preview article { max-width: 70ch; }
+.actions {
+  margin: 1.5rem 0;
+  padding: 1rem 1.1rem 1.25rem;
+  border: 2px solid var(--ink);
+  background: #fff;
+}
+.actions form + form {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid #ddd;
+}
 h1 { font-family: Georgia, serif; }

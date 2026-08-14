@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     google_client_secret: SecretStr = SecretStr("")
 
     gemini_api_key: SecretStr = SecretStr("")
-    llm_model: str = "gemini-2.5-flash"
+    llm_model: str = "gemini-3.5-flash"
     llm_timeout_seconds: float = 90.0
 
     wp_base_url: str = "https://bolsocoberto.com.br"

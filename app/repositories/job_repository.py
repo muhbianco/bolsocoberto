@@ -65,3 +65,19 @@ class JobRepository:
 
     async def save(self, job: EditorJob) -> None:
         await self.session.flush()
+
+    async def add_urls(self, job: EditorJob, urls: list[str]) -> list[str]:
+        existing = {source.url for source in job.sources}
+        added: list[str] = []
+        for url in urls:
+            if url in existing:
+                continue
+            job.sources.append(
+                EditorJobSource(url=url, fetch_status=FetchStatus.PENDING)
+            )
+            existing.add(url)
+            added.append(url)
+        if added:
+            job.source_urls = list(job.source_urls) + added
+        await self.session.flush()
+        return added

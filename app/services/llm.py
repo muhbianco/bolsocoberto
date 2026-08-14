@@ -41,12 +41,13 @@ Categoria: apenas "financas" ou "seguros".
 Slug: minúsculas, hífen, sem acento, até 80 caracteres.
 
 Responda SOMENTE JSON válido com as chaves:
-title, slug, category, excerpt (meta description, até 155 caracteres), body_html, sources (array de {url, label}).
+title, slug, category, excerpt (meta description, até 155 caracteres), body_html, sources (array de objetos url e label).
 
-Ângulo pedido pelo editor (pode estar vazio): {angle}
+Ângulo pedido pelo editor (pode estar vazio):
+ANGLE_PLACEHOLDER
 
 Fontes e fatos:
-{facts}
+FACTS_PLACEHOLDER
 """
 
 
@@ -63,7 +64,7 @@ def sanitize_html(raw: str) -> str:
 class GeminiDraft:
     def __init__(self) -> None:
         self.api_key = settings.gemini_api_key.get_secret_value().strip()
-        self.model = settings.llm_model.strip() or "gemini-2.5-flash"
+        self.model = settings.llm_model.strip() or "gemini-3.5-flash"
 
     async def write(
         self,
@@ -76,7 +77,9 @@ class GeminiDraft:
         blocks = []
         for url, text in facts:
             blocks.append(f"URL: {url}\nTRECHO:\n{text[:12000]}")
-        prompt = _PROMPT.format(angle=(angle or "").strip() or "(nenhum)", facts="\n\n".join(blocks))
+        prompt = _PROMPT.replace(
+            "ANGLE_PLACEHOLDER", (angle or "").strip() or "(nenhum)"
+        ).replace("FACTS_PLACEHOLDER", "\n\n".join(blocks))
         payload: dict[str, Any] = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generationConfig": {

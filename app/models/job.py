@@ -49,6 +49,13 @@ class EditorJob(TimestampMixin, Base):
         order_by="EditorJobSource.id",
     )
 
+    def usable_source_count(self) -> int:
+        return sum(
+            1
+            for source in self.sources
+            if source.fetch_status == FetchStatus.OK and (source.extracted_text or "").strip()
+        )
+
 
 class EditorJobSource(TimestampMixin, Base):
     __tablename__ = "editor_job_sources"

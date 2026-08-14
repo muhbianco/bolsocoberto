@@ -22,6 +22,15 @@ class JobRunner:
         facts: list[tuple[str, str]] = []
         errors: list[str] = []
         for source in job.sources:
+            if (
+                source.fetch_status == FetchStatus.OK
+                and (source.extracted_text or "").strip()
+            ):
+                facts.append((source.url, source.extracted_text or ""))
+                continue
+            if source.fetch_status == FetchStatus.FAILED:
+                errors.append(f"{source.url}: {source.error_message or 'falhou'}")
+                continue
             try:
                 parse_http_url(source.url)
                 result = await fetch_readable(source.url)
@@ -50,10 +59,10 @@ class JobRunner:
             job.error_message = exc.message
             await self.repo.save(job)
             return
-        except Exception:
+        except Exception as exc:
             logger.exception("Falha inesperada no LLM", extra={"job_id": job.id})
             job.status = JobStatus.FAILED
-            job.error_message = "Falha inesperada na redação."
+            job.error_message = f"Falha inesperada na redação ({type(exc).__name__})."
             await self.repo.save(job)
             return
 

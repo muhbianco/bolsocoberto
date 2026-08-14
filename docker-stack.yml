@@ -43,7 +43,7 @@ x-app-env: &app_env
   GOOGLE_CLIENT_SECRET: ""
 
   GEMINI_API_KEY: ""
-  LLM_MODEL: gemini-2.5-flash
+  LLM_MODEL: gemini-3.5-flash
 
   WP_BASE_URL: https://bolsocoberto.com.br
   WP_APP_USER: ""

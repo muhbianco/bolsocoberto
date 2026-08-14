@@ -88,6 +88,23 @@ async def create_job(
     return RedirectResponse(f"/jobs/{job.id}", status_code=303)
 
 
+_INTERACTIVE = {JobStatus.FAILED, JobStatus.NEEDS_REVIEW}
+
+
+def _require_interactive(job) -> None:
+    if job.status == JobStatus.APPLIED:
+        raise DomainError("Este rascunho já foi aplicado no WordPress.")
+    if job.status in {JobStatus.QUEUED, JobStatus.RUNNING}:
+        raise DomainError("Espere o processamento terminar.")
+    if job.status not in _INTERACTIVE:
+        raise DomainError("Este job não aceita essa ação agora.")
+
+
+def _requeue(job) -> None:
+    job.status = JobStatus.QUEUED
+    job.error_message = None
+
+
 @router.get("/jobs/{job_id}", response_class=HTMLResponse)
 async def view_job(
     job_id: str,
@@ -172,5 +189,59 @@ async def apply_job(
     )
     job.wp_post_id = post_id
     job.status = JobStatus.APPLIED
+    await repo.save(job)
+    return RedirectResponse(f"/jobs/{job.id}", status_code=303)
+
+
+@router.post("/jobs/{job_id}/continue")
+async def continue_job(
+    job_id: str,
+    request: Request,
+    csrf: str = Form(...),
+    email: str = Depends(require_email_html),
+    session: AsyncSession = Depends(db_session),
+) -> RedirectResponse:
+    del email
+    if not csrf_ok(request, csrf):
+        raise DomainError("CSRF inválido.")
+    repo = JobRepository(session)
+    job = await repo.get(job_id)
+    if job is None:
+        raise NotFoundError("Job não encontrado.")
+    _require_interactive(job)
+    if job.usable_source_count() < 1:
+        raise DomainError("Nenhuma fonte útil ainda. Cadastre outra URL.")
+    _requeue(job)
+    await repo.save(job)
+    return RedirectResponse(f"/jobs/{job.id}", status_code=303)
+
+
+@router.post("/jobs/{job_id}/urls")
+async def add_job_urls(
+    job_id: str,
+    request: Request,
+    urls: str = Form(...),
+    csrf: str = Form(...),
+    email: str = Depends(require_email_html),
+    session: AsyncSession = Depends(db_session),
+) -> RedirectResponse:
+    del email
+    if not csrf_ok(request, csrf):
+        raise DomainError("CSRF inválido.")
+    repo = JobRepository(session)
+    job = await repo.get(job_id)
+    if job is None:
+        raise NotFoundError("Job não encontrado.")
+    _require_interactive(job)
+    parsed = _parse_urls(urls)
+    total = len({source.url for source in job.sources} | set(parsed))
+    if total > settings.fetch_max_urls:
+        raise ValidationError(
+            f"No máximo {settings.fetch_max_urls} URLs por pauta ({len(job.sources)} já cadastradas)."
+        )
+    added = await repo.add_urls(job, parsed)
+    if not added:
+        raise ValidationError("Essas URLs já estão na pauta.")
+    _requeue(job)
     await repo.save(job)
     return RedirectResponse(f"/jobs/{job.id}", status_code=303)
