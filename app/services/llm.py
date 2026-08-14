@@ -106,7 +106,7 @@ class GeminiDraft:
                 "Gemini recusou",
                 extra={"status": response.status_code, "body": (response.text or "")[:400]},
             )
-            raise DomainError("LLM recusou a geração.")
+            raise DomainError(_gemini_refusal_message(response))
         data = response.json()
         text = _first_text(data)
         parsed = _parse_json_object(text)
@@ -137,6 +137,35 @@ class GeminiDraft:
             "body_html": body,
             "sources": sources,
         }
+
+
+def _gemini_refusal_message(response: httpx.Response) -> str:
+    body_text = response.text or ""
+    reason = ""
+    message = ""
+    try:
+        payload = response.json()
+        error = payload.get("error") if isinstance(payload, dict) else None
+        if isinstance(error, dict):
+            message = str(error.get("message") or "")
+            details = error.get("details") or []
+            if isinstance(details, list):
+                for item in details:
+                    if isinstance(item, dict) and item.get("reason"):
+                        reason = str(item["reason"])
+                        break
+    except ValueError:
+        message = body_text[:200]
+    if reason == "API_KEY_IP_ADDRESS_BLOCKED" or "IP address restriction" in message:
+        return (
+            "A chave Gemini está restrita por IP e esta VPS não está na lista. "
+            "No Google Cloud → Credenciais da API key, inclua o IP público do host (62.238.104.94)."
+        )
+    if response.status_code == 403:
+        return "Gemini recusou a chave (403)."
+    if response.status_code == 404:
+        return "Modelo Gemini não encontrado. Confira LLM_MODEL."
+    return "LLM recusou a geração."
 
 
 def _first_text(payload: dict[str, Any]) -> str:
