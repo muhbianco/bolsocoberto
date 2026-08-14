@@ -96,6 +96,21 @@ update_option('blogdescription', 'Finanças e proteção, sem enrolação.');
 update_option('rank_math_knowledgegraph_type', 'Organization');
 update_option('rank_math_website_name', 'Bolso Coberto');
 
+$htaccess = <<<'HTA'
+# BEGIN WordPress
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+RewriteBase /
+RewriteRule ^index\.php$ - [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.php [L]
+</IfModule>
+# END WordPress
+HTA;
+file_put_contents('/var/www/html/.htaccess', $htaccess);
+
 switch_theme('bolsocoberto');
 if (function_exists('bolsocoberto_seed_menu')) {
     delete_option('bolsocoberto_menu_seeded');
