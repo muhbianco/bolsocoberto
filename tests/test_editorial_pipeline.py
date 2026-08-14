@@ -226,6 +226,12 @@ class TestGeminiResposta:
         assert config["maxOutputTokens"] == 65536
         assert config["thinkingConfig"] == {"thinkingLevel": "minimal"}
         assert config["responseMimeType"] == "application/json"
+        assert "responseSchema" not in config
+
+        with_schema = _generation_config(
+            "gemini-3.5-flash", 0.0, 8192, response_schema={"type": "object"}
+        )
+        assert with_schema["responseSchema"] == {"type": "object"}
 
     def test_json_valido_nao_falha_por_max_tokens(self) -> None:
         from app.core.exceptions import DomainError
@@ -267,3 +273,25 @@ class TestGeminiResposta:
 
         settings = Settings(llm_max_output_tokens=965536)
         assert settings.llm_max_output_tokens == 65536
+
+    def test_json_embutido_em_prosa_e_extraido(self) -> None:
+        from app.services.llm import _parse_json_object
+
+        parsed = _parse_json_object(
+            'Checagem ok.\n{"issues": [], "verdict": "ok"}\n'
+        )
+        assert parsed["verdict"] == "ok"
+        assert parsed["issues"] == []
+
+    def test_checagem_quebrada_trava_apply(self) -> None:
+        from app.models.job import EditorJob
+
+        job = EditorJob.__new__(EditorJob)
+        job.verification_json = {
+            "issues": [],
+            "verdict": "revisar",
+            "parse_failed": True,
+        }
+        job.similarity_max = None
+        reasons = job.blocking_reasons(similarity_threshold=0.12)
+        assert any("JSON" in reason for reason in reasons)

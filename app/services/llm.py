@@ -188,6 +188,77 @@ RASCUNHO
 DRAFT_PLACEHOLDER
 """
 
+_STRING_SCHEMA = {"type": "string"}
+_EXTRACT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "facts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "claim": _STRING_SCHEMA,
+                    "value": _STRING_SCHEMA,
+                    "unit": _STRING_SCHEMA,
+                    "period": _STRING_SCHEMA,
+                    "entity": _STRING_SCHEMA,
+                    "primary_source": _STRING_SCHEMA,
+                    "primary_source_url": _STRING_SCHEMA,
+                    "source_url": _STRING_SCHEMA,
+                },
+                "required": ["claim"],
+            },
+        }
+    },
+    "required": ["facts"],
+}
+_WRITE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "title": _STRING_SCHEMA,
+        "seo_title": _STRING_SCHEMA,
+        "focus_keyword": _STRING_SCHEMA,
+        "slug": _STRING_SCHEMA,
+        "category": _STRING_SCHEMA,
+        "tags": {"type": "array", "items": _STRING_SCHEMA},
+        "excerpt": _STRING_SCHEMA,
+        "takeaways": {"type": "array", "items": _STRING_SCHEMA},
+        "body_html": _STRING_SCHEMA,
+        "faq": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "question": _STRING_SCHEMA,
+                    "answer": _STRING_SCHEMA,
+                },
+                "required": ["question", "answer"],
+            },
+        },
+        "image_alt": _STRING_SCHEMA,
+    },
+    "required": ["title", "body_html"],
+}
+_VERIFY_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "issues": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "excerpt": _STRING_SCHEMA,
+                    "kind": _STRING_SCHEMA,
+                    "why": _STRING_SCHEMA,
+                },
+                "required": ["excerpt", "kind", "why"],
+            },
+        },
+        "verdict": _STRING_SCHEMA,
+    },
+    "required": ["issues", "verdict"],
+}
+
 
 class EditorialLLM:
     """Pipeline editorial em três passagens.
@@ -207,13 +278,17 @@ class EditorialLLM:
         *,
         temperature: float,
         max_output_tokens: int,
+        response_schema: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if not self.api_key:
             raise DomainError("GEMINI_API_KEY não configurada.")
         payload: dict[str, Any] = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generationConfig": _generation_config(
-                self.model, temperature, max_output_tokens
+                self.model,
+                temperature,
+                max_output_tokens,
+                response_schema=response_schema,
             ),
         }
         url = _GEMINI_URL.format(model=self.model)
@@ -245,6 +320,7 @@ class EditorialLLM:
             _EXTRACT_PROMPT.replace("FACTS_PLACEHOLDER", "\n\n---\n\n".join(blocks)),
             temperature=0.1,
             max_output_tokens=settings.llm_max_output_tokens,
+            response_schema=_EXTRACT_SCHEMA,
         )
         raw_facts = parsed.get("facts")
         if not isinstance(raw_facts, list):
@@ -297,6 +373,7 @@ class EditorialLLM:
             prompt,
             temperature=0.5,
             max_output_tokens=settings.llm_max_output_tokens,
+            response_schema=_WRITE_SCHEMA,
         )
         return _normalize_draft(parsed)
 
@@ -312,7 +389,16 @@ class EditorialLLM:
             .replace("MACRO_PLACEHOLDER", _render_macro(macro_facts))
             .replace("DRAFT_PLACEHOLDER", body_html[:40_000])
         )
-        parsed = await self._generate(prompt, temperature=0.0, max_output_tokens=8192)
+        try:
+            parsed = await self._generate(
+                prompt,
+                temperature=0.0,
+                max_output_tokens=8192,
+                response_schema=_VERIFY_SCHEMA,
+            )
+        except DomainError as exc:
+            logger.warning("Verificação do LLM falhou", extra={"error": exc.message})
+            return {"issues": [], "verdict": "revisar", "parse_failed": True}
         raw_issues = parsed.get("issues")
         issues: list[dict[str, str]] = []
         if isinstance(raw_issues, list):
@@ -331,7 +417,7 @@ class EditorialLLM:
                     }
                 )
         verdict = "revisar" if issues else "ok"
-        return {"issues": issues, "verdict": verdict}
+        return {"issues": issues, "verdict": verdict, "parse_failed": False}
 
 
 def _render_ledger(ledger: list[dict[str, str]]) -> str:
@@ -450,7 +536,10 @@ def _gemini_refusal_message(response: httpx.Response) -> str:
 
 
 def _generation_config(
-    model: str, temperature: float, max_output_tokens: int
+    model: str,
+    temperature: float,
+    max_output_tokens: int,
+    response_schema: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     config: dict[str, Any] = {
         "temperature": temperature,
@@ -458,6 +547,8 @@ def _generation_config(
         "responseMimeType": "application/json",
         "thinkingConfig": _thinking_config(model),
     }
+    if response_schema:
+        config["responseSchema"] = response_schema
     return config
 
 
@@ -544,13 +635,56 @@ def _parse_json_object(raw: str) -> dict[str, Any]:
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*", "", text)
         text = re.sub(r"\s*```$", "", text)
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise DomainError("LLM não devolveu JSON válido.") from exc
-    if not isinstance(data, dict):
-        raise DomainError("JSON do LLM não é objeto.")
-    return data
+    candidates = [text]
+    sliced = _json_object_slice(text)
+    if sliced and sliced != text:
+        candidates.append(sliced)
+    last_error: Exception | None = None
+    for candidate in candidates:
+        try:
+            data = json.loads(candidate)
+        except json.JSONDecodeError as exc:
+            last_error = exc
+            continue
+        if isinstance(data, dict):
+            return data
+        last_error = DomainError("JSON do LLM não é objeto.")
+    logger.warning(
+        "Gemini JSON inválido",
+        extra={"chars": len(text), "preview": text[:240]},
+    )
+    if isinstance(last_error, DomainError):
+        raise last_error
+    raise DomainError("LLM não devolveu JSON válido.") from last_error
+
+
+def _json_object_slice(text: str) -> str | None:
+    start = text.find("{")
+    if start < 0:
+        return None
+    depth = 0
+    in_string = False
+    escape = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+            continue
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : index + 1]
+    return None
 
 
 def slugify(value: str) -> str:

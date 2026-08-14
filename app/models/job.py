@@ -95,6 +95,11 @@ class EditorJob(TimestampMixin, Base):
                 f"{len(issues)} afirmação(ões) sem lastro na trilha de fatos. "
                 "Corrija o corpo ou remova o trecho."
             )
+        if (self.verification_json or {}).get("parse_failed"):
+            reasons.append(
+                "A checagem automática não devolveu JSON válido. "
+                "Revise o texto antes de aplicar."
+            )
         if self.similarity_max is not None and self.similarity_max > similarity_threshold:
             reasons.append(
                 f"Similaridade de {self.similarity_max:.0%} com uma das fontes, "
