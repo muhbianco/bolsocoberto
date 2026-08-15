@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Bolso Coberto — SEO e monetização
  * Description: Expõe os metadados do Rank Math na REST, publica ads.txt e emite schema de FAQ.
- * Version: 1.2.0
+ * Version: 1.2.1
  *
  * Vive em mu-plugins porque o editor externo depende disso para gravar SEO:
  * se ficasse no tema, trocar de tema quebraria a publicação.
@@ -210,3 +210,38 @@ function bolso_seo_page_schema(array $data, $jsonld): array
     return $data;
 }
 add_filter('rank_math/json_ld', 'bolso_seo_page_schema', 99, 2);
+
+/**
+ * Rank Math com snippet "off" nas páginas não chama json_ld — então o tipo
+ * certo precisa ser emitido aqui, senão Sobre/Contato saem sem schema nenhum.
+ */
+function bolso_seo_page_jsonld(): void
+{
+    if (!is_singular('page')) {
+        return;
+    }
+    $slug = get_post_field('post_name', get_queried_object_id());
+    $type = match ($slug) {
+        'sobre' => 'AboutPage',
+        'contato' => 'ContactPage',
+        default => 'WebPage',
+    };
+    $permalink = get_permalink();
+    $schema = [
+        '@context' => 'https://schema.org',
+        '@type' => $type,
+        '@id' => $permalink . '#webpage',
+        'url' => $permalink,
+        'name' => get_the_title(),
+        'inLanguage' => 'pt-BR',
+        'isPartOf' => ['@id' => home_url('/#website')],
+    ];
+    $description = trim((string) get_post_meta(get_queried_object_id(), 'rank_math_description', true));
+    if ($description !== '') {
+        $schema['description'] = $description;
+    }
+    echo "\n<script type=\"application/ld+json\">"
+        . wp_json_encode($schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+        . "</script>\n";
+}
+add_action('wp_footer', 'bolso_seo_page_jsonld');
