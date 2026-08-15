@@ -45,15 +45,18 @@ _OUTLINES: dict[ContentType, str] = {
     ContentType.NOTICIA: """Alvo: 600 a 900 palavras.
 1. Abertura de duas ou três frases com o fato principal e o número que importa.
 2. <h2> O que aconteceu — o fato em contexto, com os dados do ledger.
-3. <h2> O que muda no seu bolso — consequência concreta para o leitor comum.
+3. <h2> O que muda no seu bolso — nomeie pelo menos três segmentos concretos de
+   quem vive de salário e o efeito em reais por mês ou por ano, com a premissa
+   da conta escrita. Se a conta não sair dos fatos, diga isso em vez de estimar.
 4. <h2> Perguntas rápidas — 3 perguntas curtas em <h3> com resposta objetiva.""",
     ContentType.EXPLICATIVO: """Alvo: 1100 a 1600 palavras. Este é o formato principal do site.
 A notícia é o gancho, não o produto. O leitor chega pelo fato e fica pela explicação.
 1. Abertura de três a quatro frases: o que aconteceu e por que ele deveria se importar.
 2. <h2> O que de fato mudou — os dados do ledger, com período e fonte de cada número.
 3. <h2> Por que isso aconteceu — o mecanismo econômico, explicado sem jargão.
-4. <h2> Quem sente no bolso — segmentos concretos (quem tem CDB, quem financia imóvel,
-   quem paga seguro, quem tem dívida no cartão). Seja específico, não genérico.
+4. <h2> Quem sente no bolso — pelo menos três segmentos concretos de quem vive de
+   salário (quem financia imóvel, quem paga aluguel, quem tem dívida no cartão,
+   quem recebe piso, quem tem reserva no CDB). Efeito em reais, premissa explícita.
 5. <h2> Os números de hoje — aqui entram os blocos de dados calculados.
 6. <h2> O que fazer com essa informação — orientação geral e honesta, nunca
    recomendação personalizada, e diga também quando a resposta é "não fazer nada".
@@ -62,7 +65,8 @@ A notícia é o gancho, não o produto. O leitor chega pelo fato e fica pela exp
 1. Abertura que responde a pergunta principal em até 60 palavras, direto,
    porque é esse trecho que vira resposta destacada e citação em resposta de IA.
 2. <h2> O que é e como funciona.
-3. <h2> Quanto custa (ou quanto rende) na prática — com números.
+3. <h2> Quanto custa (ou quanto rende) na prática — com números, e o que isso muda
+   no bolso de pelo menos três segmentos concretos de quem vive de salário.
 4. <h2> Comparativo — tabela comparando as opções reais do mercado brasileiro.
 5. <h2> Passo a passo — lista ordenada, acionável.
 6. <h2> Erros que custam caro — 4 a 6 erros comuns e o prejuízo de cada um.
@@ -129,6 +133,16 @@ VALOR PRÓPRIO — é o que nos separa da fonte
 - Prefira exemplos com valores redondos e realistas para o Brasil.
 - Se houver contradição entre fontes, aponte a contradição em vez de escolher uma.
 
+REGRA DO BOLSO — é o que a marca promete
+Todo texto precisa nomear pelo menos três segmentos concretos de quem vive de
+salário (quem financia imóvel, quem paga aluguel, quem tem dívida no cartão,
+quem recebe piso ou salário mínimo, quem tem reserva no CDB) e dizer o efeito
+em reais por mês ou por ano sempre que a conta sair dos fatos apurados. Quando
+a conta não for possível, diga isso em vez de estimar. A premissa de cada conta
+precisa aparecer escrita ("para quem tem R$ 10 mil aplicados"): é honesto, e o
+checador trata número hipotético marcado como exemplo, não como afirmação sem
+lastro.
+
 ÂNGULO PEDIDO PELO EDITOR
 ANGLE_PLACEHOLDER
 
@@ -155,7 +169,8 @@ RESPONDA SOMENTE JSON VÁLIDO com exatamente estas chaves:
   "category": "financas ou seguros",
   "tags": ["3 a 6 temas ou entidades, em minúsculas"],
   "excerpt": "meta description entre 140 e 155 caracteres, contendo a palavra-chave",
-  "takeaways": ["3 a 5 frases curtas de o que muda no bolso do leitor"],
+  "takeaways": ["3 a 5 itens no formato 'Quem <segmento>: <efeito, com valor e período>'"],
+  "pocket_line": "efeito principal no bolso, até 90 caracteres, sem jargão, para a capa",
   "body_html": "o artigo completo em HTML",
   "faq": [{"question": "...", "answer": "..."}],
   "image_alt": "descrição objetiva para a imagem de capa, até 120 caracteres"
@@ -202,6 +217,7 @@ _WRITE_SCHEMA: dict[str, Any] = {
         "tags": {"type": "array", "items": _STRING_SCHEMA},
         "excerpt": _STRING_SCHEMA,
         "takeaways": {"type": "array", "items": _STRING_SCHEMA},
+        "pocket_line": _STRING_SCHEMA,
         "body_html": _STRING_SCHEMA,
         "faq": {
             "type": "array",
@@ -465,6 +481,7 @@ def _normalize_draft(parsed: dict[str, Any]) -> dict[str, Any]:
         "tags": _string_list(parsed.get("tags"), limit=6, max_len=60),
         "excerpt": excerpt,
         "takeaways": _string_list(parsed.get("takeaways"), limit=5, max_len=220),
+        "pocket_line": str(parsed.get("pocket_line") or "").strip()[:90],
         "body_html": body,
         "faq": _faq_list(parsed.get("faq")),
         "image_alt": str(parsed.get("image_alt") or title).strip()[:120],

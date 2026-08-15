@@ -35,6 +35,13 @@ def test_write_prompt_forbids_model_written_sources() -> None:
     assert "Não escreva a seção de fontes" in _WRITE_PROMPT
 
 
+def test_write_prompt_exige_regra_do_bolso() -> None:
+    assert "REGRA DO BOLSO" in _WRITE_PROMPT
+    assert "pelo menos três segmentos" in _WRITE_PROMPT
+    assert "pocket_line" in _WRITE_PROMPT
+    assert "Quem <segmento>" in _WRITE_PROMPT
+
+
 def test_usable_source_count_ignores_failed() -> None:
     job = EditorJob(
         status=JobStatus.FAILED,

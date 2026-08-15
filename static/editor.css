@@ -104,8 +104,19 @@ summary { cursor: pointer; font-weight: 600; }
 .preview .bc-note {
   padding: 0.85rem 1rem;
   background: #f2f5f1;
-  border-left: 4px solid var(--coverage);
   margin: 1.25rem 0;
+}
+.preview .bc-note {
+  border-left: 4px solid var(--coverage);
+}
+.preview .bc-takeaways {
+  border-left: 4px solid var(--gold);
+}
+.preview .bc-takeaways p:first-child {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
 }
 .preview .bc-table-wrap { overflow-x: auto; margin: 1.5rem 0; }
 .preview .bc-table-wrap table { font-size: 0.92rem; }

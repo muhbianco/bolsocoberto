@@ -280,6 +280,7 @@ class JobRunner:
             category=draft["category"],
             headline=draft["title"],
             fields=fields,
+            pocket_line=str(draft.get("pocket_line") or ""),
         )
         if hero is None:
             return

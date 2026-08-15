@@ -97,8 +97,8 @@ function bolso_rank_math_site_options(): void
     }
     $titles['website_name'] = 'Bolso Coberto';
     $titles['knowledgegraph_type'] = 'company';
-    $titles['homepage_title'] = 'Bolso Coberto | Finanças e proteção, sem enrolação';
-    $titles['homepage_description'] = 'Finanças pessoais e seguros com dado conferido na fonte. O que o número muda no seu bolso, sem enrolação.';
+    $titles['homepage_title'] = 'Bolso Coberto | Finanças para quem vive de salário';
+    $titles['homepage_description'] = 'Finanças pessoais e seguros para quem vive de salário. Pegamos a notícia de economia, conferimos o dado na fonte e mostramos o que muda no seu mês.';
     $titles['pt_page_default_rich_snippet'] = 'off';
     $titles['pt_post_default_rich_snippet'] = 'article';
     $titles['pt_post_default_article_type'] = 'BlogPosting';
@@ -152,7 +152,7 @@ $author_url = bolso_env('AUTHOR_URL');
 bolso_upsert_page(
     'sobre',
     'Sobre o Bolso Coberto',
-    bolso_p('O Bolso Coberto é um portal brasileiro de finanças pessoais e seguros. A proposta é simples: pegar o que aconteceu, checar o dado na fonte que produziu o número e explicar o que aquilo muda no bolso de quem lê.')
+    bolso_p('O Bolso Coberto é um portal brasileiro de finanças pessoais e seguros para quem vive de salário. A proposta é simples: pegar a notícia de economia, checar o dado na fonte que produziu o número e mostrar o que aquilo muda no bolso de quem lê.')
     . bolso_h('Como trabalhamos')
     . bolso_p('Toda matéria começa por dados verificáveis. Quando o assunto envolve um indicador, buscamos o número direto no órgão responsável — Banco Central, IBGE, Susep, CVM, B3 — e não na intermediação de outro veículo. Os cálculos e as tabelas de simulação são feitos por nós e podem ser refeitos por qualquer leitor.')
     . bolso_p('Usamos ferramentas de automação para organizar apuração e acelerar a redação, e nenhum texto vai ao ar sem revisão humana de quem assina. A <a href="/politica-editorial/">política editorial</a> completa descreve o processo, incluindo o que fazemos quando erramos.')
@@ -268,7 +268,7 @@ if (!is_plugin_active($plugin_file)) {
     }
 }
 
-update_option('blogdescription', 'Finanças e proteção, sem enrolação.');
+update_option('blogdescription', 'Finanças e proteção para quem vive de salário.');
 update_option('rank_math_knowledgegraph_type', 'Organization');
 update_option('rank_math_website_name', 'Bolso Coberto');
 bolso_rank_math_site_options();
@@ -429,7 +429,7 @@ foreach (['sobre', 'contato', 'privacidade', 'aviso-legal', 'politica-editorial'
 $page_seo = [
     'sobre' => [
         'title' => 'Sobre o Bolso Coberto | Quem escreve e como apuramos',
-        'description' => 'O Bolso Coberto é um portal brasileiro de finanças e seguros. Conferimos o dado na fonte, refazemos a conta e explicamos o que muda no seu bolso.',
+        'description' => 'O Bolso Coberto explica finanças e seguros para quem vive de salário. Conferimos o dado na fonte, refazemos a conta e mostramos o que muda no seu bolso.',
         'keyword' => 'bolso coberto',
     ],
     'contato' => [

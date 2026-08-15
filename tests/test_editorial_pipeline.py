@@ -17,6 +17,7 @@ from app.services.sources import (
     collect_primary_sources,
     is_institutional,
     render_sources_block,
+    render_takeaways,
     render_trust_links,
 )
 
@@ -164,6 +165,19 @@ class TestHtml:
         assert 'class="bc-takeaways"' in limpo
         assert 'class="hack"' not in limpo
 
+    def test_takeaways_no_formato_de_segmento_passam_pelo_sanitizador(self) -> None:
+        bloco = render_takeaways(
+            [
+                "Quem financia imóvel: R$ 48 a mais por mês na parcela de R$ 2 mil.",
+                "Quem tem dívida no cartão: o rotativo segue acima de 400% ao ano.",
+            ]
+        )
+        limpo = sanitize_html(bloco)
+        assert 'class="bc-takeaways"' in limpo
+        assert "O que muda no seu bolso" in limpo
+        assert "Quem financia imóvel" in limpo
+        assert "<script" not in limpo
+
     def test_politica_de_link_separa_interno_veiculo_e_institucional(self) -> None:
         corpo = (
             '<p><a href="https://bolsocoberto.com.br/x">interno</a> '
@@ -257,10 +271,24 @@ class TestCapa:
             reference="Banco Central · 14/08/2026",
         )
         assert "Selic meta em 15,00% ao ano" in alt
+        assert "No seu bolso" not in alt
         assert len(alt) <= 300
+
+        com_bolso = _data_alt(
+            label="Selic meta",
+            value="15,00% ao ano",
+            reference="Banco Central · 14/08/2026",
+            pocket_line="Parcela de R$ 2 mil sobe cerca de R$ 48 no mês",
+        )
+        assert "No seu bolso: Parcela de R$ 2 mil" in com_bolso
+        assert len(com_bolso) <= 300
 
         assert "manchete" in _brand_alt("Quanto rende o CDB de 100% do CDI")
         assert _brand_alt("") == "Cartão de capa do Bolso Coberto."
+        assert "No seu bolso" in _brand_alt(
+            "Seguro auto ficou mais caro",
+            pocket_line="Quem paga R$ 3 mil por ano sente o reajuste",
+        )
 
     def test_capa_carrega_manchete_e_marca(self) -> None:
         from app.services.image import build_hero
@@ -279,9 +307,58 @@ class TestCapa:
         # JPEG progressivo válido, não um arquivo truncado.
         assert hero.data[:2] == b"\xff\xd8"
         assert hero.alt.startswith("Cartão do Bolso Coberto")
+        assert "No seu bolso" not in hero.alt
+
+    def test_capa_com_e_sem_pocket_line(self) -> None:
+        from app.services.image import build_hero
+
+        fields = {
+            "label": "Selic meta",
+            "value": "15,00% ao ano",
+            "reference": "Banco Central · 14/08/2026",
+            "series": [13.0, 14.0, 14.75, 15.0],
+        }
+        sem = build_hero(
+            category="financas",
+            headline="Copom mantém a Selic em 15% ao ano",
+            fields=fields,
+        )
+        com = build_hero(
+            category="financas",
+            headline="Copom mantém a Selic em 15% ao ano",
+            fields=fields,
+            pocket_line="Parcela de R$ 2 mil sobe cerca de R$ 48 no mês",
+        )
+        assert sem is not None and com is not None
+        assert sem.data[:2] == b"\xff\xd8"
+        assert com.data[:2] == b"\xff\xd8"
+        assert "No seu bolso" not in sem.alt
+        assert "No seu bolso: Parcela de R$ 2 mil" in com.alt
+
+        brand = build_hero(
+            category="seguros",
+            headline="Seguro auto ficou mais caro neste ano",
+            fields=None,
+            pocket_line="Quem paga R$ 3 mil por ano sente o reajuste no bolso",
+        )
+        assert brand is not None
+        assert brand.data[:2] == b"\xff\xd8"
+        assert "No seu bolso" in brand.alt
 
 
 class TestGeminiResposta:
+    def test_rascunho_aceita_pocket_line_ausente_e_trunca(self) -> None:
+        from app.services.llm import _normalize_draft
+
+        base = {
+            "title": "Selic para em 15%",
+            "body_html": "<p>O Copom manteve a taxa.</p>",
+        }
+        sem_campo = _normalize_draft(base)
+        assert sem_campo["pocket_line"] == ""
+
+        longo = _normalize_draft({**base, "pocket_line": "x" * 120})
+        assert longo["pocket_line"] == "x" * 90
     def test_teto_da_api_nao_ultrapassa_65536(self) -> None:
         from app.services.llm import cap_output_tokens
 

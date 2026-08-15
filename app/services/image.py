@@ -14,6 +14,10 @@ logger = get_logger(__name__)
 WIDTH = 1200
 HEIGHT = 675
 SCALE = 2  # desenha no dobro e reduz, que é o antialias mais barato aqui.
+# Faixa da linha do bolso, acima da assinatura. Sem ela o gráfico desce até
+# HEIGHT - 130; com ela, para no topo da faixa.
+POCKET_BAND_TOP = HEIGHT - 170
+POCKET_GRAPH_BOTTOM = POCKET_BAND_TOP - 16
 
 # brand/tokens.json não vai para a imagem Docker, então os tokens vivem aqui.
 INK = (18, 20, 23)
@@ -86,6 +90,22 @@ def _draw_signature(draw: ImageDraw.ImageDraw) -> None:
     )
 
 
+def _draw_pocket_note(draw: ImageDraw.ImageDraw, text: str) -> None:
+    """Selo dourado + efeito no bolso. Só desenha quando a redação entregou a frase."""
+    line = (text or "").strip()
+    if not line:
+        return
+    kicker_font = _font(18 * SCALE, bold=True)
+    body_font = _font(22 * SCALE)
+    top = POCKET_BAND_TOP * SCALE
+    draw.text((72 * SCALE, top), "NO SEU BOLSO", font=kicker_font, fill=GOLD)
+    y = top + 26 * SCALE
+    max_width = (WIDTH - 144) * SCALE
+    for wrapped in _wrap(draw, line, body_font, max_width)[:2]:
+        draw.text((72 * SCALE, y), wrapped, font=body_font, fill=INK)
+        y += 28 * SCALE
+
+
 def _draw_series(
     draw: ImageDraw.ImageDraw,
     series: Sequence[float],
@@ -134,16 +154,19 @@ def render_data_hero(
     reference: str,
     series: Sequence[float],
     headline: str = "",
+    pocket_line: str = "",
 ) -> bytes:
     canvas = Image.new("RGB", (WIDTH * SCALE, HEIGHT * SCALE), PAPER)
     draw = ImageDraw.Draw(canvas, "RGBA")
     _draw_chrome(draw, category)
 
+    has_pocket = bool((pocket_line or "").strip())
     # A manchete vem antes do número: sem ela o cartão de duas matérias
     # diferentes sobre o mesmo indicador sai idêntico.
     headline_font = _font(44 * SCALE, bold=True)
     y = 104 * SCALE
-    for line in _wrap(draw, headline, headline_font, (WIDTH - 144) * SCALE)[:3]:
+    headline_limit = 2 if has_pocket else 3
+    for line in _wrap(draw, headline, headline_font, (WIDTH - 144) * SCALE)[:headline_limit]:
         draw.text((72 * SCALE, y), line, font=headline_font, fill=INK)
         y += 56 * SCALE
 
@@ -152,12 +175,14 @@ def render_data_hero(
     draw.text((72 * SCALE, (top + 34) * SCALE), value, font=_font(72 * SCALE, bold=True), fill=INK)
     draw.text((72 * SCALE, (top + 136) * SCALE), reference, font=_font(22 * SCALE), fill=MUTED)
 
+    graph_bottom = POCKET_GRAPH_BOTTOM if has_pocket else HEIGHT - 130
     if len(series) >= 3:
-        _draw_series(draw, list(series), (600, top, WIDTH - 72, HEIGHT - 130))
+        _draw_series(draw, list(series), (600, top, WIDTH - 72, graph_bottom))
+    _draw_pocket_note(draw, pocket_line)
     return _encode(canvas)
 
 
-def render_brand_hero(*, category: str, headline: str) -> bytes:
+def render_brand_hero(*, category: str, headline: str, pocket_line: str = "") -> bytes:
     """Capa de reserva quando não há série numérica ligada à pauta."""
     canvas = Image.new("RGB", (WIDTH * SCALE, HEIGHT * SCALE), PAPER)
     draw = ImageDraw.Draw(canvas, "RGBA")
@@ -177,11 +202,14 @@ def render_brand_hero(*, category: str, headline: str) -> bytes:
             fill=tint,
         )
 
+    has_pocket = bool((pocket_line or "").strip())
     font = _font(58 * SCALE, bold=True)
     y = 190 * SCALE
-    for line in _wrap(draw, headline, font, (WIDTH - 420) * SCALE)[:4]:
+    headline_limit = 3 if has_pocket else 4
+    for line in _wrap(draw, headline, font, (WIDTH - 420) * SCALE)[:headline_limit]:
         draw.text((72 * SCALE, y), line, font=font, fill=INK)
         y += 76 * SCALE
+    _draw_pocket_note(draw, pocket_line)
     return _encode(canvas)
 
 
@@ -211,6 +239,7 @@ def build_hero(
     category: str,
     headline: str,
     fields: dict[str, object] | None,
+    pocket_line: str = "",
 ) -> HeroImage | None:
     try:
         if fields:
@@ -225,14 +254,24 @@ def build_hero(
                 reference=reference,
                 series=series if isinstance(series, list) else [],
                 headline=headline,
+                pocket_line=pocket_line,
             )
             return HeroImage(
                 data=data,
-                alt=_data_alt(label=label, value=value, reference=reference),
+                alt=_data_alt(
+                    label=label,
+                    value=value,
+                    reference=reference,
+                    pocket_line=pocket_line,
+                ),
             )
         return HeroImage(
-            data=render_brand_hero(category=category, headline=headline),
-            alt=_brand_alt(headline),
+            data=render_brand_hero(
+                category=category,
+                headline=headline,
+                pocket_line=pocket_line,
+            ),
+            alt=_brand_alt(headline, pocket_line=pocket_line),
         )
     except Exception:
         logger.exception("Falha ao gerar a capa; a pauta segue sem imagem")
@@ -244,17 +283,25 @@ def build_hero(
 # que é informação errada para leitor de tela e para o Google Imagens.
 
 
-def _data_alt(*, label: str, value: str, reference: str) -> str:
+def _data_alt(*, label: str, value: str, reference: str, pocket_line: str = "") -> str:
     if not label or not value:
         return "Cartão do Bolso Coberto com o gráfico do indicador."
     text = f"Cartão do Bolso Coberto: {label} em {value}"
     if reference:
         text += f" ({reference})"
-    return f"{text}, com o gráfico dos últimos meses."[:300]
+    text += ", com o gráfico dos últimos meses."
+    note = (pocket_line or "").strip()
+    if note:
+        text += f" No seu bolso: {note}"
+    return text[:300]
 
 
-def _brand_alt(headline: str) -> str:
+def _brand_alt(headline: str, pocket_line: str = "") -> str:
     text = (headline or "").strip()
     if not text:
         return "Cartão de capa do Bolso Coberto."
-    return f"Cartão de capa do Bolso Coberto com a manchete: {text}"[:300]
+    alt = f"Cartão de capa do Bolso Coberto com a manchete: {text}"
+    note = (pocket_line or "").strip()
+    if note:
+        alt += f". No seu bolso: {note}"
+    return alt[:300]

@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) {
 
 // Serve de cache-buster para style.css e content.css: sem subir aqui, quem já
 // visitou o site recebe o HTML novo com o CSS antigo e os cards desmontam.
-const BOLSCOBERTO_THEME_VERSION = '1.1.0';
+const BOLSCOBERTO_THEME_VERSION = '1.1.1';
 
 function bolsocoberto_setup(): void
 {

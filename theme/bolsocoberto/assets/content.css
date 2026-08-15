@@ -9,12 +9,26 @@
   margin: 1.75rem 0;
   padding: 1rem 1.25rem;
   background: #f2f5f1;
+}
+
+.bc-note {
   border-left: 4px solid var(--bc-coverage);
+}
+
+.bc-takeaways {
+  border-left: 4px solid var(--bc-gold);
 }
 
 .bc-takeaways p:first-child,
 .bc-note p:first-child {
   margin-top: 0;
+}
+
+.bc-takeaways p:first-child {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
 }
 
 .bc-takeaways ul,
