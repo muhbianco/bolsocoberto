@@ -37,6 +37,7 @@ from app.services.sources import (
     render_faq,
     render_sources_block,
     render_takeaways,
+    render_trust_links,
 )
 
 logger = get_logger(__name__)
@@ -226,6 +227,7 @@ class JobRunner:
             body += render_fixed_income_table(snapshot)
 
         body += render_faq(draft["faq"])
+        body += render_trust_links(site_url=settings.wp_base_url)
 
         primary = collect_primary_sources(ledger, input_urls)
         press = collect_press_sources(input_urls)

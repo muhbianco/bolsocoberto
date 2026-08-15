@@ -17,6 +17,7 @@ from app.services.sources import (
     collect_primary_sources,
     is_institutional,
     render_sources_block,
+    render_trust_links,
 )
 
 FONTE = (
@@ -134,6 +135,18 @@ class TestPoliticaDeFontes:
         assert "Dados e referências" in bloco
         # Fonte institucional passa autoridade de propósito: nada de nofollow.
         assert "nofollow" not in bloco
+
+    def test_trust_links_apontam_paginas_de_confianca(self) -> None:
+        bloco = render_trust_links(site_url="https://bolsocoberto.com.br")
+        assert "bc-trust-links" in bloco
+        assert "https://bolsocoberto.com.br/politica-editorial/" in bloco
+        assert "https://bolsocoberto.com.br/sobre/" in bloco
+        limpo = sanitize_html(bloco)
+        assert "bc-trust-links" in limpo
+        assert "bc-note" in limpo
+
+    def test_trust_links_sem_url_nao_inventa_href(self) -> None:
+        assert render_trust_links(site_url="") == ""
 
 
 class TestHtml:

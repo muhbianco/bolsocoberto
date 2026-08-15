@@ -190,6 +190,25 @@ def render_sources_block(
     return "".join(parts)
 
 
+def render_trust_links(*, site_url: str) -> str:
+    """Link interno para as páginas de confiança — sinal de E-E-A-T em YMYL.
+
+    Com corpus pequeno o linker automático não acha âncora entre matérias;
+    estas duas URLs sempre existem depois da higiene e não canibalizam pauta.
+    """
+    base = (site_url or "").rstrip("/")
+    if not base:
+        return ""
+    editorial = html.escape(f"{base}/politica-editorial/", quote=True)
+    sobre = html.escape(f"{base}/sobre/", quote=True)
+    return (
+        '<p class="bc-note bc-trust-links">Este texto segue a '
+        f'<a href="{editorial}">política editorial</a> do '
+        f'<a href="{sobre}">Bolso Coberto</a>: dado conferido na fonte e '
+        "revisão humana antes de publicar.</p>"
+    )
+
+
 def render_takeaways(takeaways: list[str]) -> str:
     if not takeaways:
         return ""

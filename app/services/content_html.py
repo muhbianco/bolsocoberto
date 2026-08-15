@@ -61,6 +61,7 @@ ALLOWED_CLASSES = frozenset(
         "bc-sources",
         "bc-primary-sources",
         "bc-note",
+        "bc-trust-links",
         "bc-updated",
         "bc-figure",
     }

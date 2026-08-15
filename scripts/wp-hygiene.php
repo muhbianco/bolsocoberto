@@ -80,6 +80,68 @@ function bolso_ul(array $items): string
     return "<!-- wp:list -->\n<ul class=\"wp-block-list\">\n{$li}</ul>\n<!-- /wp:list -->\n";
 }
 
+function bolso_page_seo(int $id, string $title, string $description, string $keyword): void
+{
+    update_post_meta($id, 'rank_math_title', $title);
+    update_post_meta($id, 'rank_math_description', $description);
+    update_post_meta($id, 'rank_math_focus_keyword', $keyword);
+    // Rank Math grava Article em page por default; off + filtro do mu-plugin.
+    update_post_meta($id, 'rank_math_rich_snippet', 'off');
+}
+
+function bolso_rank_math_site_options(): void
+{
+    $titles = get_option('rank-math-options-titles', []);
+    if (!is_array($titles)) {
+        $titles = [];
+    }
+    $titles['website_name'] = 'Bolso Coberto';
+    $titles['knowledgegraph_type'] = 'company';
+    $titles['homepage_title'] = 'Bolso Coberto | Finanças e proteção, sem enrolação';
+    $titles['homepage_description'] = 'Finanças pessoais e seguros com dado conferido na fonte. O que o número muda no seu bolso, sem enrolação.';
+    $titles['pt_page_default_rich_snippet'] = 'off';
+    $titles['pt_post_default_rich_snippet'] = 'article';
+    $titles['pt_post_default_article_type'] = 'BlogPosting';
+    update_option('rank-math-options-titles', $titles);
+}
+
+/**
+ * Posts já no ar não passam de novo pelo editor. Sem este bloco, Rank Math
+ * continua em 0 links internos até o corpus crescer o bastante para o linker.
+ */
+function bolso_append_trust_links(): int
+{
+    $sobre = get_page_by_path('sobre');
+    $editorial = get_page_by_path('politica-editorial');
+    if (!$sobre instanceof WP_Post || !$editorial instanceof WP_Post) {
+        return 0;
+    }
+    $block = sprintf(
+        '<p class="bc-note bc-trust-links">Este texto segue a <a href="%s">política editorial</a> do <a href="%s">Bolso Coberto</a>: dado conferido na fonte e revisão humana antes de publicar.</p>',
+        esc_url(get_permalink($editorial)),
+        esc_url(get_permalink($sobre))
+    );
+    $patched = 0;
+    $posts = get_posts([
+        'post_type' => 'post',
+        'post_status' => 'publish',
+        'numberposts' => -1,
+    ]);
+    foreach ($posts as $post) {
+        if (str_contains((string) $post->post_content, 'bc-trust-links')) {
+            continue;
+        }
+        $updated = wp_update_post([
+            'ID' => $post->ID,
+            'post_content' => rtrim((string) $post->post_content) . "\n" . $block,
+        ], true);
+        if (!is_wp_error($updated)) {
+            $patched++;
+        }
+    }
+    return $patched;
+}
+
 $contact_email = bolso_env('CONTACT_EMAIL', (string) get_option('admin_email'));
 $author_name = bolso_env('AUTHOR_DISPLAY_NAME');
 $author_bio = bolso_env('AUTHOR_BIO');
@@ -93,7 +155,7 @@ bolso_upsert_page(
     bolso_p('O Bolso Coberto é um portal brasileiro de finanças pessoais e seguros. A proposta é simples: pegar o que aconteceu, checar o dado na fonte que produziu o número e explicar o que aquilo muda no bolso de quem lê.')
     . bolso_h('Como trabalhamos')
     . bolso_p('Toda matéria começa por dados verificáveis. Quando o assunto envolve um indicador, buscamos o número direto no órgão responsável — Banco Central, IBGE, Susep, CVM, B3 — e não na intermediação de outro veículo. Os cálculos e as tabelas de simulação são feitos por nós e podem ser refeitos por qualquer leitor.')
-    . bolso_p('Usamos ferramentas de automação para organizar apuração e acelerar a redação, e nenhum texto vai ao ar sem revisão humana de quem assina. A política editorial completa descreve o processo, incluindo o que fazemos quando erramos.')
+    . bolso_p('Usamos ferramentas de automação para organizar apuração e acelerar a redação, e nenhum texto vai ao ar sem revisão humana de quem assina. A <a href="/politica-editorial/">política editorial</a> completa descreve o processo, incluindo o que fazemos quando erramos.')
     . bolso_h('O que não fazemos')
     . bolso_ul([
         'Não republicamos matéria de outro site.',
@@ -102,6 +164,7 @@ bolso_upsert_page(
         'Não publicamos número que não conseguimos rastrear até a fonte original.',
     ])
     . bolso_p("Fale com a gente pelo e-mail <a href=\"mailto:{$contact_email}\">{$contact_email}</a> ou pela <a href=\"/contato/\">página de contato</a>.")
+    . bolso_p('As análises mais recentes estão na <a href="/">página inicial</a>.')
 );
 
 bolso_upsert_page(
@@ -113,6 +176,7 @@ bolso_upsert_page(
     . bolso_p('Se você encontrou um dado errado em alguma matéria, mande o link e a informação correta. Erro confirmado é corrigido no próprio texto, com nota informando o que mudou e quando.')
     . bolso_h('Prazo')
     . bolso_p('Respondemos em até cinco dias úteis. Pedido de correção tem prioridade.')
+    . bolso_p('Antes de escrever, vale ler o <a href="/aviso-legal/">aviso legal</a> e a página <a href="/sobre/">sobre o Bolso Coberto</a>.')
 );
 
 bolso_upsert_page(
@@ -129,6 +193,7 @@ bolso_upsert_page(
     . bolso_p('Erro identificado é corrigido no próprio texto, com nota ao pé informando o que mudou e a data. Não apagamos matéria para esconder erro.')
     . bolso_h('Limite do conteúdo')
     . bolso_p('O que publicamos é informação, não consultoria. Nenhum texto considera a sua situação individual. Decisão que pesa no orçamento merece conversa com profissional habilitado e registrado no órgão competente.')
+    . bolso_p('Quem somos está na página <a href="/sobre/">sobre o Bolso Coberto</a>. Limites jurídicos do conteúdo estão no <a href="/aviso-legal/">aviso legal</a>.')
 );
 
 bolso_upsert_page(
@@ -144,9 +209,10 @@ bolso_upsert_page(
     . bolso_p('Links para sites de terceiros são oferecidos como referência. Não controlamos e não respondemos pelo conteúdo, pelas práticas de privacidade ou pela disponibilidade desses sites.')
     . bolso_h('Limitação de responsabilidade')
     . bolso_p('Nos esforçamos para publicar informação correta e atualizada, mas não garantimos exatidão, completude ou atualidade permanente. Decisões tomadas com base no conteúdo deste site são de responsabilidade exclusiva de quem as toma.')
+    . bolso_p('O processo de apuração está na <a href="/politica-editorial/">política editorial</a>. Dúvidas: <a href="/contato/">contato</a>.')
 );
 
-$privacidade = bolso_p('Esta política explica quais dados o Bolso Coberto coleta, por que coleta e o que você pode exigir. Ela segue a Lei Geral de Proteção de Dados (Lei 13.709/2018).')
+$privacidade = bolso_p('Esta política de privacidade explica quais dados o Bolso Coberto coleta, por que coleta e o que você pode exigir. Ela segue a Lei Geral de Proteção de Dados (Lei 13.709/2018).')
     . bolso_h('Dados que coletamos')
     . bolso_ul([
         'Dados técnicos de acesso: endereço IP, tipo de navegador, páginas visitadas e horário, registrados para segurança e para medir audiência.',
@@ -163,7 +229,8 @@ $privacidade = bolso_p('Esta política explica quais dados o Bolso Coberto colet
     . bolso_h('O que não fazemos')
     . bolso_p('Não vendemos sua lista de leitura, não comercializamos base de e-mails e não pedimos dado sensível para entregar conteúdo.')
     . bolso_h('Retenção')
-    . bolso_p('Logs técnicos são mantidos pelo prazo necessário à segurança e às obrigações legais, e descartados depois disso.');
+    . bolso_p('Logs técnicos são mantidos pelo prazo necessário à segurança e às obrigações legais, e descartados depois disso.')
+    . bolso_p('Para exercer direitos ou tirar dúvidas, use a página de <a href="/contato/">contato</a>.');
 
 $legacy_privacy = get_page_by_path('politica-de-privacidade');
 if ($legacy_privacy instanceof WP_Post) {
@@ -204,6 +271,7 @@ if (!is_plugin_active($plugin_file)) {
 update_option('blogdescription', 'Finanças e proteção, sem enrolação.');
 update_option('rank_math_knowledgegraph_type', 'Organization');
 update_option('rank_math_website_name', 'Bolso Coberto');
+bolso_rank_math_site_options();
 
 // ---------------------------------------------------------------- mu-plugin
 
@@ -357,8 +425,50 @@ foreach (['sobre', 'contato', 'privacidade', 'aviso-legal', 'politica-editorial'
     $page = get_page_by_path($slug);
     echo $slug . '=' . ($page instanceof WP_Post ? (string) $page->ID : '0') . "\n";
 }
+
+$page_seo = [
+    'sobre' => [
+        'title' => 'Sobre o Bolso Coberto | Quem escreve e como apuramos',
+        'description' => 'O Bolso Coberto é um portal brasileiro de finanças e seguros. Conferimos o dado na fonte, refazemos a conta e explicamos o que muda no seu bolso.',
+        'keyword' => 'bolso coberto',
+    ],
+    'contato' => [
+        'title' => 'Contato do Bolso Coberto | Correção e pauta',
+        'description' => 'Contato do Bolso Coberto para correção, pauta ou direito de resposta. Pedido de correção tem prioridade; respondemos em até cinco dias úteis.',
+        'keyword' => 'contato bolso coberto',
+    ],
+    'politica-editorial' => [
+        'title' => 'Política editorial | Como o Bolso Coberto apura',
+        'description' => 'Política editorial do Bolso Coberto: fonte primária, texto escrito do zero, checagem de números e correção à vista. Automação não publica sozinha.',
+        'keyword' => 'política editorial',
+    ],
+    'aviso-legal' => [
+        'title' => 'Aviso legal | Bolso Coberto',
+        'description' => 'Aviso legal do Bolso Coberto: conteúdo jornalístico sobre finanças e seguros, sem recomendação de investimento, crédito ou contratação de seguro.',
+        'keyword' => 'aviso legal',
+    ],
+    'privacidade' => [
+        'title' => 'Política de privacidade | Bolso Coberto',
+        'description' => 'Política de privacidade do Bolso Coberto: quais dados coletamos, cookies do Google, base legal e como exercer seus direitos pela LGPD.',
+        'keyword' => 'política de privacidade',
+    ],
+];
+$seo_ok = 0;
+foreach ($page_seo as $slug => $meta) {
+    $page = get_page_by_path($slug);
+    if (!$page instanceof WP_Post) {
+        echo "seo:{$slug}=faltando\n";
+        continue;
+    }
+    bolso_page_seo((int) $page->ID, $meta['title'], $meta['description'], $meta['keyword']);
+    $seo_ok++;
+}
+$trust_patched = bolso_append_trust_links();
+
 echo 'theme=' . wp_get_theme()->get_stylesheet() . "\n";
 echo 'menu=' . ($nav_id > 0 ? (string) $nav_id : 'falhou')
     . ' (removidos=' . (string) $nav_removed . ")\n";
 echo 'adsense=' . ($publisher !== '' ? 'configurado' : 'pendente') . "\n";
 echo 'mu-plugin=' . (file_exists($mu_dir . '/bolsocoberto-seo.php') ? 'ok' : 'faltando') . "\n";
+echo 'page-seo=' . (string) $seo_ok . "/5\n";
+echo 'trust-links=' . (string) $trust_patched . "\n";

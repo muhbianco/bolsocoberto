@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Bolso Coberto — SEO e monetização
  * Description: Expõe os metadados do Rank Math na REST, publica ads.txt e emite schema de FAQ.
- * Version: 1.1.0
+ * Version: 1.2.0
  *
  * Vive em mu-plugins porque o editor externo depende disso para gravar SEO:
  * se ficasse no tema, trocar de tema quebraria a publicação.
@@ -26,14 +26,16 @@ const BOLSO_SEO_META_KEYS = [
  */
 function bolso_seo_register_meta(): void
 {
-    foreach (BOLSO_SEO_META_KEYS as $key) {
-        register_post_meta('post', $key, [
-            'type' => 'string',
-            'single' => true,
-            'show_in_rest' => true,
-            'sanitize_callback' => 'wp_strip_all_tags',
-            'auth_callback' => static fn (): bool => current_user_can('edit_posts'),
-        ]);
+    foreach (['post', 'page'] as $type) {
+        foreach (BOLSO_SEO_META_KEYS as $key) {
+            register_post_meta($type, $key, [
+                'type' => 'string',
+                'single' => true,
+                'show_in_rest' => true,
+                'sanitize_callback' => 'wp_strip_all_tags',
+                'auth_callback' => static fn (): bool => current_user_can('edit_posts'),
+            ]);
+        }
     }
 }
 add_action('init', 'bolso_seo_register_meta');
@@ -165,3 +167,46 @@ function bolso_seo_faq_schema(): void
         . "</script>\n";
 }
 add_action('wp_footer', 'bolso_seo_faq_schema');
+
+/**
+ * Página estática não é Article. Rank Math defaulta Posts e Pages para o mesmo
+ * snippet; sem este filtro, Sobre/Contato saem como BlogPosting no JSON-LD.
+ *
+ * @param array<string, mixed> $data
+ * @param mixed                $jsonld
+ * @return array<string, mixed>
+ */
+function bolso_seo_page_schema(array $data, $jsonld): array
+{
+    if (!is_singular('page')) {
+        return $data;
+    }
+
+    foreach (['Article', 'article', 'BlogPosting', 'NewsArticle', 'richSnippet'] as $key) {
+        unset($data[$key]);
+    }
+
+    $slug = get_post_field('post_name', get_queried_object_id());
+    $type = match ($slug) {
+        'sobre' => 'AboutPage',
+        'contato' => 'ContactPage',
+        default => 'WebPage',
+    };
+
+    if (isset($data['WebPage']) && is_array($data['WebPage'])) {
+        $data['WebPage']['@type'] = $type;
+        return $data;
+    }
+
+    $permalink = get_permalink();
+    $data['WebPage'] = [
+        '@type' => $type,
+        '@id' => $permalink . '#webpage',
+        'url' => $permalink,
+        'name' => get_the_title(),
+        'inLanguage' => 'pt-BR',
+        'isPartOf' => ['@id' => home_url('/#website')],
+    ];
+    return $data;
+}
+add_filter('rank_math/json_ld', 'bolso_seo_page_schema', 99, 2);
