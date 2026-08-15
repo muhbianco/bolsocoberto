@@ -61,6 +61,15 @@ function bolso_h(string $text, int $level = 2): string
     return "<!-- wp:heading {\"level\":{$level}} -->\n<h{$level}>{$text}</h{$level}>\n<!-- /wp:heading -->\n";
 }
 
+function bolso_nav_link(string $label, string $url): string
+{
+    return sprintf(
+        '<!-- wp:navigation-link {"label":%s,"url":%s,"kind":"custom","isTopLevelLink":true} /-->' . "\n",
+        wp_json_encode($label, JSON_UNESCAPED_UNICODE),
+        wp_json_encode($url, JSON_UNESCAPED_SLASHES)
+    );
+}
+
 function bolso_ul(array $items): string
 {
     // Sem o wrapper wp:list-item o Gutenberg marca o bloco como inválido ao abrir.
@@ -268,10 +277,88 @@ if (function_exists('bolsocoberto_seed_menu')) {
     bolsocoberto_seed_menu();
 }
 
+// ------------------------------------------------------------- categorias
+
+// O editor só associa a categoria se ela já existir: ele busca pelo slug e
+// desiste em silêncio. Sem isto, matéria de seguros nasce sem categoria.
+foreach (['financas' => 'Finanças', 'seguros' => 'Seguros'] as $slug => $name) {
+    if (!get_category_by_slug($slug)) {
+        wp_insert_term($name, 'category', ['slug' => $slug]);
+    }
+}
+
+// -------------------------------------------------------------- navegação
+
+/**
+ * O bloco wp:navigation do cabeçalho não tem `ref`: o WordPress adota o post
+ * wp_navigation publicado mais recentemente e, quando não existe nenhum, cai
+ * na lista automática de páginas — foi assim que Aviso legal e Privacidade
+ * foram parar no topo do site. Manter um único post torna o menu previsível.
+ */
+$nav_blocks = '';
+foreach (['financas' => 'Finanças', 'seguros' => 'Seguros'] as $slug => $label) {
+    $term = get_category_by_slug($slug);
+    if ($term instanceof WP_Term) {
+        $nav_blocks .= bolso_nav_link($label, get_category_link($term));
+    }
+}
+foreach (['sobre' => 'Sobre', 'contato' => 'Contato'] as $slug => $label) {
+    $page = get_page_by_path($slug);
+    if ($page instanceof WP_Post) {
+        $nav_blocks .= bolso_nav_link($label, get_permalink($page));
+    }
+}
+
+$nav_slug = 'menu-principal';
+$nav_id = 0;
+$nav_removed = 0;
+$nav_existing = get_posts([
+    'post_type' => 'wp_navigation',
+    'post_status' => ['publish', 'draft'],
+    'numberposts' => -1,
+    'orderby' => 'ID',
+    'order' => 'ASC',
+]);
+foreach ($nav_existing as $nav_post) {
+    if ($nav_id === 0 && $nav_post->post_name === $nav_slug) {
+        $nav_id = (int) $nav_post->ID;
+        continue;
+    }
+    wp_delete_post((int) $nav_post->ID, true);
+    $nav_removed++;
+}
+
+$nav_now = current_time('mysql');
+$nav_payload = [
+    'post_title' => 'Menu principal',
+    'post_name' => $nav_slug,
+    'post_content' => $nav_blocks,
+    'post_status' => 'publish',
+    'post_type' => 'wp_navigation',
+    // Data renovada a cada execução: é o critério que o core usa para escolher
+    // qual navegação assume quando o bloco não aponta para um id.
+    'post_date' => $nav_now,
+    'post_date_gmt' => get_gmt_from_date($nav_now),
+];
+if ($nav_id > 0) {
+    $nav_payload['ID'] = $nav_id;
+    $nav_result = wp_update_post($nav_payload, true);
+} else {
+    $nav_result = wp_insert_post($nav_payload, true);
+}
+if (is_wp_error($nav_result)) {
+    fwrite(STDERR, 'menu: ' . $nav_result->get_error_message() . "\n");
+    $nav_id = 0;
+} else {
+    $nav_id = (int) $nav_result;
+}
+
 foreach (['sobre', 'contato', 'privacidade', 'aviso-legal', 'politica-editorial'] as $slug) {
     $page = get_page_by_path($slug);
     echo $slug . '=' . ($page instanceof WP_Post ? (string) $page->ID : '0') . "\n";
 }
 echo 'theme=' . wp_get_theme()->get_stylesheet() . "\n";
+echo 'menu=' . ($nav_id > 0 ? (string) $nav_id : 'falhou')
+    . ' (removidos=' . (string) $nav_removed . ")\n";
 echo 'adsense=' . ($publisher !== '' ? 'configurado' : 'pendente') . "\n";
 echo 'mu-plugin=' . (file_exists($mu_dir . '/bolsocoberto-seo.php') ? 'ok' : 'faltando') . "\n";

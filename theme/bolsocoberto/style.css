@@ -38,3 +38,107 @@ body {
   background: var(--bc-gold);
   margin: 0.75rem 0 1.25rem;
 }
+
+/* ------------------------------------------------------------------ marca */
+
+.bc-brand {
+  gap: 0.6rem;
+}
+
+.bc-brand__mark {
+  display: flex;
+  line-height: 0;
+}
+
+.bc-brand__mark svg {
+  display: block;
+}
+
+/* ----------------------------------------------------------------- banner */
+
+.bc-masthead {
+  border-bottom: 2px solid var(--bc-ink);
+}
+
+.bc-masthead h1 {
+  margin: 0;
+  color: inherit;
+}
+
+.bc-masthead .bc-gold-rule {
+  margin: 0.9rem 0;
+}
+
+.bc-masthead__sub {
+  margin: 0;
+  max-width: 46rem;
+}
+
+/* ------------------------------------------------------------ lista da capa */
+
+.bc-section-title {
+  border-bottom: 2px solid var(--bc-ink);
+  padding-bottom: 0.4rem;
+}
+
+.bc-meta {
+  color: #52565a;
+}
+
+/*
+ * Card horizontal: miniatura à esquerda, texto à direita. Flex em vez de grid
+ * porque post-featured-image não imprime nada quando o post não tem capa, e
+ * uma coluna de grid vazia deixaria um buraco de 14rem no lugar.
+ */
+.bc-card {
+  display: flex;
+  gap: 1.5rem;
+  padding-block: 1.5rem;
+  border-bottom: 1px solid #dcdcd4;
+}
+
+.bc-card__media {
+  flex: 0 0 14rem;
+}
+
+.bc-card__media:not(:has(img)) {
+  display: none;
+}
+
+.bc-card__media figure {
+  margin: 0;
+}
+
+.bc-card__media img {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+}
+
+.bc-card__body {
+  flex: 1 1 auto;
+  /* sem isto o texto longo estoura o flex item em vez de quebrar linha */
+  min-width: 0;
+}
+
+.bc-card__body p {
+  margin-block: 0;
+}
+
+.bc-lead .wp-block-post-featured-image img {
+  width: 100%;
+  height: auto;
+  object-fit: cover;
+}
+
+@media (max-width: 40rem) {
+  .bc-card {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .bc-card__media {
+    flex: none;
+  }
+}

@@ -212,6 +212,62 @@ class TestCalculoFinanceiro:
         assert len(campos["series"]) == 4
 
 
+class TestCapa:
+    def test_cartao_de_dados_so_em_pauta_de_indicador(self) -> None:
+        from app.services.job_runner import _hero_shows_indicator
+
+        juros = {
+            "category": "financas",
+            "title": "Copom mantém a Selic em 15% e o CDB muda de conta",
+            "focus_keyword": "selic hoje",
+        }
+        balanco = {
+            "category": "financas",
+            "title": "Mercado volta a confiar no roxinho? Os números do Nubank",
+            "focus_keyword": "nubank lucro",
+        }
+        seguro = {
+            "category": "seguros",
+            "title": "Selic alta encarece o seguro de vida",
+            "focus_keyword": "seguro de vida",
+        }
+        assert _hero_shows_indicator(juros) is True
+        assert _hero_shows_indicator(balanco) is False
+        assert _hero_shows_indicator(seguro) is False
+
+    def test_alt_descreve_o_cartao_desenhado(self) -> None:
+        from app.services.image import _brand_alt, _data_alt
+
+        alt = _data_alt(
+            label="Selic meta",
+            value="15,00% ao ano",
+            reference="Banco Central · 14/08/2026",
+        )
+        assert "Selic meta em 15,00% ao ano" in alt
+        assert len(alt) <= 300
+
+        assert "manchete" in _brand_alt("Quanto rende o CDB de 100% do CDI")
+        assert _brand_alt("") == "Cartão de capa do Bolso Coberto."
+
+    def test_capa_carrega_manchete_e_marca(self) -> None:
+        from app.services.image import build_hero
+
+        hero = build_hero(
+            category="financas",
+            headline="Copom mantém a Selic em 15% ao ano",
+            fields={
+                "label": "Selic meta",
+                "value": "15,00% ao ano",
+                "reference": "Banco Central · 14/08/2026",
+                "series": [13.0, 14.0, 14.75, 15.0],
+            },
+        )
+        assert hero is not None
+        # JPEG progressivo válido, não um arquivo truncado.
+        assert hero.data[:2] == b"\xff\xd8"
+        assert hero.alt.startswith("Cartão do Bolso Coberto")
+
+
 class TestGeminiResposta:
     def test_teto_da_api_nao_ultrapassa_65536(self) -> None:
         from app.services.llm import cap_output_tokens

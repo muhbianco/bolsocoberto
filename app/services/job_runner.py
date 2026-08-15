@@ -61,6 +61,21 @@ _ENRICH_TERMS = (
     "emprestim",
 )
 
+# Recorte mais estreito, usado só para decidir a capa: são os termos que nomeiam
+# o indicador estampado no cartão.
+_HERO_TERMS = (
+    "selic",
+    "cdi",
+    "ipca",
+    "juro",
+    "inflacao",
+    "poupanca",
+    "copom",
+    "renda fixa",
+    "tesouro",
+    "dolar",
+)
+
 
 def _fold(text: str) -> str:
     folded = unicodedata.normalize("NFKD", (text or "").lower())
@@ -153,7 +168,6 @@ class JobRunner:
         job.verification_json = verification
         job.similarity_json = similarity.as_dict()
         job.similarity_max = similarity.max_containment
-        job.hero_image_alt = draft["image_alt"]
         job.status = JobStatus.NEEDS_REVIEW
         job.error_message = (
             "Algumas URLs falharam: " + " | ".join(fetch_errors)[:1400]
@@ -257,14 +271,30 @@ class JobRunner:
         return inject_links(body, suggestions)
 
     async def _attach_hero(self, job, draft: dict, snapshot) -> None:
-        fields = hero_fields(snapshot) if draft["category"] == "financas" else None
+        fields = hero_fields(snapshot) if _hero_shows_indicator(draft) else None
         # Pillow é CPU puro; rodar no loop travaria o worker inteiro.
-        job.hero_image_bytes = await asyncio.to_thread(
+        hero = await asyncio.to_thread(
             build_hero,
             category=draft["category"],
             headline=draft["title"],
             fields=fields,
         )
+        if hero is None:
+            return
+        job.hero_image_bytes = hero.data
+        job.hero_image_alt = hero.alt
+
+
+def _hero_shows_indicator(draft: dict) -> bool:
+    """A capa de dados estampa Selic ou IPCA, então só cabe quando a pauta é
+    sobre juro ou inflação. Antes bastava ser da editoria de finanças, e toda
+    matéria saía com o mesmo gráfico da Selic. O teste é no título e na palavra
+    -chave, não no ledger: um fato solto citando "empréstimo" não faz da pauta
+    uma matéria de juro."""
+    if draft["category"] != "financas":
+        return False
+    haystack = _fold(f"{draft['title']} {draft['focus_keyword']}")
+    return any(term in haystack for term in _HERO_TERMS)
 
 
 def _content_type(raw: str | None) -> ContentType:

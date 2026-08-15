@@ -53,9 +53,9 @@ add_action('wp_enqueue_scripts', 'bolsocoberto_enqueue');
 function bolsocoberto_head_icons(): void
 {
     $base = get_stylesheet_directory_uri() . '/assets';
+    // Só o SVG: os PNGs de 32px e de apple-touch nunca existiram em assets/ e
+    // cada página pedia dois 404 ao navegador.
     echo '<link rel="icon" href="' . esc_url($base . '/favicon.svg') . '" type="image/svg+xml">' . "\n";
-    echo '<link rel="icon" href="' . esc_url($base . '/favicon-32.png') . '" sizes="32x32" type="image/png">' . "\n";
-    echo '<link rel="apple-touch-icon" href="' . esc_url($base . '/apple-touch-icon.png') . '">' . "\n";
     echo '<link rel="manifest" href="' . esc_url($base . '/site.webmanifest') . '">' . "\n";
     echo '<meta name="theme-color" content="#0F7A4B">' . "\n";
 

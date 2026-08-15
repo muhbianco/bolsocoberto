@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -20,6 +21,8 @@ PAPER = (250, 250, 247)
 COVERAGE = (15, 122, 75)
 GOLD = (232, 163, 23)
 GRID = (223, 224, 218)
+SUBTLE = (90, 94, 98)
+MUTED = (120, 124, 128)
 
 _BOLD_CANDIDATES = (
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -33,6 +36,12 @@ _REGULAR_CANDIDATES = (
 )
 
 CATEGORY_LABELS = {"financas": "FINANÇAS", "seguros": "SEGUROS"}
+
+
+@dataclass(frozen=True, slots=True)
+class HeroImage:
+    data: bytes
+    alt: str
 
 
 def _font(size: int, *, bold: bool = False) -> ImageFont.FreeTypeFont:
@@ -55,11 +64,25 @@ def _draw_chrome(draw: ImageDraw.ImageDraw, category: str) -> None:
     draw.rectangle([0, 0, WIDTH * SCALE, 12 * SCALE], fill=COVERAGE)
     kicker = CATEGORY_LABELS.get(category, "BOLSO COBERTO")
     draw.text((72 * SCALE, 58 * SCALE), kicker, font=_font(22 * SCALE, bold=True), fill=GOLD)
+    _draw_signature(draw)
+
+
+def _draw_signature(draw: ImageDraw.ImageDraw) -> None:
+    """A capa circula fora do site — Discover, WhatsApp, X — então precisa dizer
+    de quem ela é sem depender do contexto da página que a hospeda."""
+    base = HEIGHT - 62
+    draw.rectangle(
+        [72 * SCALE, (base - 18) * SCALE, (72 + 64) * SCALE, (base - 14) * SCALE],
+        fill=GOLD,
+    )
+    name_font = _font(22 * SCALE, bold=True)
+    draw.text((72 * SCALE, base * SCALE), "BOLSO COBERTO", font=name_font, fill=INK)
+    domain_x = 72 * SCALE + draw.textlength("BOLSO COBERTO", font=name_font) + 16 * SCALE
     draw.text(
-        (72 * SCALE, HEIGHT * SCALE - 62 * SCALE),
+        (domain_x, (base + 2) * SCALE),
         "bolsocoberto.com.br",
-        font=_font(20 * SCALE, bold=True),
-        fill=(120, 124, 128),
+        font=_font(20 * SCALE),
+        fill=MUTED,
     )
 
 
@@ -110,17 +133,27 @@ def render_data_hero(
     value: str,
     reference: str,
     series: Sequence[float],
+    headline: str = "",
 ) -> bytes:
     canvas = Image.new("RGB", (WIDTH * SCALE, HEIGHT * SCALE), PAPER)
     draw = ImageDraw.Draw(canvas, "RGBA")
     _draw_chrome(draw, category)
 
-    draw.text((72 * SCALE, 104 * SCALE), label, font=_font(40 * SCALE), fill=(90, 94, 98))
-    draw.text((72 * SCALE, 158 * SCALE), value, font=_font(92 * SCALE, bold=True), fill=INK)
-    draw.text((72 * SCALE, 272 * SCALE), reference, font=_font(24 * SCALE), fill=(120, 124, 128))
+    # A manchete vem antes do número: sem ela o cartão de duas matérias
+    # diferentes sobre o mesmo indicador sai idêntico.
+    headline_font = _font(44 * SCALE, bold=True)
+    y = 104 * SCALE
+    for line in _wrap(draw, headline, headline_font, (WIDTH - 144) * SCALE)[:3]:
+        draw.text((72 * SCALE, y), line, font=headline_font, fill=INK)
+        y += 56 * SCALE
+
+    top = max(int(y // SCALE) + 26, 330)
+    draw.text((72 * SCALE, top * SCALE), label, font=_font(26 * SCALE), fill=SUBTLE)
+    draw.text((72 * SCALE, (top + 34) * SCALE), value, font=_font(72 * SCALE, bold=True), fill=INK)
+    draw.text((72 * SCALE, (top + 136) * SCALE), reference, font=_font(22 * SCALE), fill=MUTED)
 
     if len(series) >= 3:
-        _draw_series(draw, list(series), (72, 350, WIDTH - 72, HEIGHT - 96))
+        _draw_series(draw, list(series), (600, top, WIDTH - 72, HEIGHT - 130))
     return _encode(canvas)
 
 
@@ -178,18 +211,50 @@ def build_hero(
     category: str,
     headline: str,
     fields: dict[str, object] | None,
-) -> bytes | None:
+) -> HeroImage | None:
     try:
         if fields:
+            label = str(fields.get("label") or "")
+            value = str(fields.get("value") or "")
+            reference = str(fields.get("reference") or "")
             series = fields.get("series")
-            return render_data_hero(
+            data = render_data_hero(
                 category=category,
-                label=str(fields.get("label") or ""),
-                value=str(fields.get("value") or ""),
-                reference=str(fields.get("reference") or ""),
+                label=label,
+                value=value,
+                reference=reference,
                 series=series if isinstance(series, list) else [],
+                headline=headline,
             )
-        return render_brand_hero(category=category, headline=headline)
+            return HeroImage(
+                data=data,
+                alt=_data_alt(label=label, value=value, reference=reference),
+            )
+        return HeroImage(
+            data=render_brand_hero(category=category, headline=headline),
+            alt=_brand_alt(headline),
+        )
     except Exception:
         logger.exception("Falha ao gerar a capa; a pauta segue sem imagem")
         return None
+
+
+# O alt precisa descrever o cartão que foi desenhado. Quando vinha do LLM ele
+# descrevia uma fotografia inexistente ("gráfico sobre fundo azul escuro"), o
+# que é informação errada para leitor de tela e para o Google Imagens.
+
+
+def _data_alt(*, label: str, value: str, reference: str) -> str:
+    if not label or not value:
+        return "Cartão do Bolso Coberto com o gráfico do indicador."
+    text = f"Cartão do Bolso Coberto: {label} em {value}"
+    if reference:
+        text += f" ({reference})"
+    return f"{text}, com o gráfico dos últimos meses."[:300]
+
+
+def _brand_alt(headline: str) -> str:
+    text = (headline or "").strip()
+    if not text:
+        return "Cartão de capa do Bolso Coberto."
+    return f"Cartão de capa do Bolso Coberto com a manchete: {text}"[:300]
