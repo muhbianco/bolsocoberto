@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Bolso Coberto — SEO e monetização
  * Description: Expõe os metadados do Rank Math na REST, publica ads.txt e emite schema de FAQ.
- * Version: 1.2.1
+ * Version: 1.3.0
  *
  * Vive em mu-plugins porque o editor externo depende disso para gravar SEO:
  * se ficasse no tema, trocar de tema quebraria a publicação.
@@ -13,6 +13,8 @@ declare(strict_types=1);
 if (!defined('ABSPATH')) {
     exit;
 }
+
+const BOLSO_SEO_PLUGIN_VERSION = '1.3.0';
 
 const BOLSO_SEO_META_KEYS = [
     'rank_math_title',
@@ -56,6 +58,10 @@ function bolso_seo_should_noindex(): bool
     if (is_date() || is_search()) {
         return true;
     }
+    if (is_category()) {
+        $term = get_queried_object();
+        return $term instanceof WP_Term && $term->count < 1;
+    }
     if (!is_tag()) {
         return false;
     }
@@ -91,6 +97,82 @@ function bolso_seo_rank_math_robots(array $robots): array
     return $robots;
 }
 add_filter('rank_math/frontend/robots', 'bolso_seo_rank_math_robots');
+
+/**
+ * O Rank Math emite SearchAction com `?s={search_term_string}`. O Google
+ * crawla o placeholder como URL real e o GSC acusa noindex — busca interna
+ * não deve ir para o índice, nem como sitelink.
+ */
+add_filter('rank_math/json_ld/disable_search', '__return_true');
+
+/**
+ * O cache XML do Rank Math grava o índice como tipo "1". Invalidar só
+ * "post" deixa o post-sitemap.xml velho no disco — foi assim que cinco
+ * matérias novas sumiram do sitemap enquanto o Google ainda as crawlava
+ * pela home.
+ */
+function bolso_seo_flush_sitemap_cache(): void
+{
+    if (class_exists('\\RankMath\\Sitemap\\Cache')) {
+        \RankMath\Sitemap\Cache::invalidate_storage();
+    }
+    $dir = WP_CONTENT_DIR . '/uploads/rank-math';
+    if (!is_dir($dir)) {
+        return;
+    }
+    foreach (glob($dir . '/rank_math_*.xml') ?: [] as $file) {
+        if (is_file($file)) {
+            unlink($file);
+        }
+    }
+    delete_option('rank_math_sitemap_cache_files');
+}
+
+function bolso_seo_flush_sitemap_on_status(string $new_status, string $old_status, $post): void
+{
+    if (!$post instanceof WP_Post || $post->post_type !== 'post') {
+        return;
+    }
+    if ($new_status !== 'publish' && $old_status !== 'publish') {
+        return;
+    }
+    bolso_seo_flush_sitemap_cache();
+}
+add_action('transition_post_status', 'bolso_seo_flush_sitemap_on_status', 99, 3);
+
+function bolso_seo_boot(): void
+{
+    if (get_option('bolso_seo_plugin_version') === BOLSO_SEO_PLUGIN_VERSION) {
+        return;
+    }
+    bolso_seo_flush_sitemap_cache();
+    update_option('bolso_seo_plugin_version', BOLSO_SEO_PLUGIN_VERSION);
+}
+add_action('init', 'bolso_seo_boot', 99);
+
+/**
+ * Categoria sem matéria no menu (hoje: Seguros) é URL fina com noindex.
+ * Esconde o item até existir post; quando a redação publicar, o link volta.
+ *
+ * @param array<string, mixed> $block
+ */
+function bolso_seo_hide_empty_category_nav(string $content, array $block): string
+{
+    if (($block['blockName'] ?? '') !== 'core/navigation-link') {
+        return $content;
+    }
+    $url = (string) ($block['attrs']['url'] ?? '');
+    $path = (string) (parse_url($url, PHP_URL_PATH) ?? '');
+    if (!preg_match('#/category/([^/]+)/?#', $path, $matches)) {
+        return $content;
+    }
+    $term = get_category_by_slug(sanitize_title($matches[1]));
+    if ($term instanceof WP_Term && $term->count < 1) {
+        return '';
+    }
+    return $content;
+}
+add_filter('render_block', 'bolso_seo_hide_empty_category_nav', 10, 2);
 
 /**
  * ads.txt virtual: se o arquivo físico sumir num redeploy, o AdSense continua

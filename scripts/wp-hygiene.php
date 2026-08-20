@@ -102,6 +102,8 @@ function bolso_rank_math_site_options(): void
     $titles['pt_page_default_rich_snippet'] = 'off';
     $titles['pt_post_default_rich_snippet'] = 'article';
     $titles['pt_post_default_article_type'] = 'BlogPosting';
+    $titles['noindex_search'] = 'on';
+    $titles['noindex_empty_taxonomies'] = 'on';
     update_option('rank-math-options-titles', $titles);
 }
 
