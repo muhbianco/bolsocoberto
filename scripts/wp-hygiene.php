@@ -80,6 +80,45 @@ function bolso_ul(array $items): string
     return "<!-- wp:list -->\n<ul class=\"wp-block-list\">\n{$li}</ul>\n<!-- /wp:list -->\n";
 }
 
+function bolso_strip_duplicate_faq(string $html): string
+{
+    if (!preg_match('#<section class="bc-faq#i', $html)) {
+        return $html;
+    }
+    $stripped = preg_replace(
+        '#<h2>\s*Perguntas frequentes[^<]*</h2>\s*(?:<h3>.*?</h3>\s*<p>.*?</p>\s*)*(?=<section class="bc-faq)#is',
+        '',
+        $html,
+        1
+    );
+    return is_string($stripped) ? $stripped : $html;
+}
+
+function bolso_dedupe_faq_posts(): int
+{
+    $patched = 0;
+    $posts = get_posts([
+        'post_type' => 'post',
+        'post_status' => 'publish',
+        'numberposts' => -1,
+    ]);
+    foreach ($posts as $post) {
+        $original = (string) $post->post_content;
+        $cleaned = bolso_strip_duplicate_faq($original);
+        if ($cleaned === $original) {
+            continue;
+        }
+        $updated = wp_update_post([
+            'ID' => $post->ID,
+            'post_content' => $cleaned,
+        ], true);
+        if (!is_wp_error($updated)) {
+            $patched++;
+        }
+    }
+    return $patched;
+}
+
 function bolso_page_seo(int $id, string $title, string $description, string $keyword): void
 {
     update_post_meta($id, 'rank_math_title', $title);
@@ -103,7 +142,9 @@ function bolso_rank_math_site_options(): void
     $titles['pt_post_default_rich_snippet'] = 'article';
     $titles['pt_post_default_article_type'] = 'BlogPosting';
     $titles['noindex_search'] = 'on';
-    $titles['noindex_empty_taxonomies'] = 'on';
+    // Categoria no menu (Seguros) precisa ser indexável mesmo sem post;
+    // página fina se resolve com descrição própria, não com noindex.
+    $titles['noindex_empty_taxonomies'] = 'off';
     update_option('rank-math-options-titles', $titles);
 }
 
@@ -148,6 +189,13 @@ $contact_email = bolso_env('CONTACT_EMAIL', (string) get_option('admin_email'));
 $author_name = bolso_env('AUTHOR_DISPLAY_NAME');
 $author_bio = bolso_env('AUTHOR_BIO');
 $author_url = bolso_env('AUTHOR_URL');
+$author = get_userdata(1);
+if ($author_name === '' && $author instanceof WP_User) {
+    $display = trim((string) $author->display_name);
+    if ($display === '' || $display === $author->user_login) {
+        $author_name = 'Redação Bolso Coberto';
+    }
+}
 
 // ---------------------------------------------------------------- páginas
 
@@ -357,6 +405,17 @@ foreach (['financas' => 'Finanças', 'seguros' => 'Seguros'] as $slug => $name) 
     }
 }
 
+$category_descriptions = [
+    'financas' => 'Análises de salário, crédito, juros e o que a notícia de economia muda no mês de quem vive de renda do trabalho. Cada texto parte de dado conferido na fonte.',
+    'seguros' => 'Proteção para quem vive de salário: apólice, franquia, sinistro e o que muda no bolso quando o assunto é seguro. As matérias desta seção entram aqui quando publicadas.',
+];
+foreach ($category_descriptions as $slug => $description) {
+    $term = get_category_by_slug($slug);
+    if ($term instanceof WP_Term) {
+        wp_update_term((int) $term->term_id, 'category', ['description' => $description]);
+    }
+}
+
 // -------------------------------------------------------------- navegação
 
 /**
@@ -466,6 +525,7 @@ foreach ($page_seo as $slug => $meta) {
     $seo_ok++;
 }
 $trust_patched = bolso_append_trust_links();
+$faq_deduped = bolso_dedupe_faq_posts();
 
 echo 'theme=' . wp_get_theme()->get_stylesheet() . "\n";
 echo 'menu=' . ($nav_id > 0 ? (string) $nav_id : 'falhou')
@@ -474,3 +534,5 @@ echo 'adsense=' . ($publisher !== '' ? 'configurado' : 'pendente') . "\n";
 echo 'mu-plugin=' . (file_exists($mu_dir . '/bolsocoberto-seo.php') ? 'ok' : 'faltando') . "\n";
 echo 'page-seo=' . (string) $seo_ok . "/5\n";
 echo 'trust-links=' . (string) $trust_patched . "\n";
+echo 'faq-dedupe=' . (string) $faq_deduped . "\n";
+echo 'author=' . ($author_name !== '' ? $author_name : 'inalterado') . "\n";

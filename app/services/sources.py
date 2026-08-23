@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import re
 from dataclasses import dataclass
 
 from app.services.content_html import registrable_host
@@ -230,3 +231,23 @@ def render_faq(faq: list[dict[str, str]]) -> str:
         for item in faq
     )
     return f'<section class="bc-faq"><h2>Perguntas frequentes</h2>{blocos}</section>'
+
+
+_FAQ_SECTION_RE = re.compile(r'<section class="bc-faq', re.I)
+_LOOSE_FAQ_RE = re.compile(
+    r"<h2>\s*Perguntas frequentes[^<]*</h2>\s*"
+    r"(?:<h3>.*?</h3>\s*<p>.*?</p>\s*)*"
+    r'(?=<section class="bc-faq)',
+    re.I | re.S,
+)
+
+
+def has_faq_section(html_body: str) -> bool:
+    return bool(_FAQ_SECTION_RE.search(html_body or ""))
+
+
+def strip_duplicate_faq(html_body: str) -> str:
+    if not html_body or not has_faq_section(html_body):
+        return html_body
+    stripped, count = _LOOSE_FAQ_RE.subn("", html_body, count=1)
+    return stripped if count else html_body

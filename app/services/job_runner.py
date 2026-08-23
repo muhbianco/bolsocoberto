@@ -38,6 +38,8 @@ from app.services.sources import (
     render_sources_block,
     render_takeaways,
     render_trust_links,
+    has_faq_section,
+    strip_duplicate_faq,
 )
 
 logger = get_logger(__name__)
@@ -50,7 +52,6 @@ _ENRICH_TERMS = (
     "cdb",
     "poupanca",
     "juro",
-    "investiment",
     "tesouro",
     "ipca",
     "inflacao",
@@ -219,14 +220,13 @@ class JobRunner:
         body = draft["body_html"]
         body = insert_after_first_paragraph(body, render_takeaways(draft["takeaways"]))
 
-        haystack = _fold(
-            draft["title"] + draft["focus_keyword"] + " ".join(f.get("claim", "") for f in ledger)
-        )
-        if draft["category"] == "financas" and any(term in haystack for term in _ENRICH_TERMS):
+        if _should_attach_macro(draft, ledger):
             body += render_macro_context(snapshot)
             body += render_fixed_income_table(snapshot)
 
-        body += render_faq(draft["faq"])
+        if not has_faq_section(body):
+            body += render_faq(draft["faq"])
+        body = strip_duplicate_faq(body)
         body += render_trust_links(site_url=settings.wp_base_url)
 
         primary = collect_primary_sources(ledger, input_urls)
@@ -286,6 +286,20 @@ class JobRunner:
             return
         job.hero_image_bytes = hero.data
         job.hero_image_alt = hero.alt
+
+
+def _should_attach_macro(draft: dict, ledger: list[dict[str, str]]) -> bool:
+    """Tabela de CDI/Selic só entra em pauta de juro. 'investimento' sozinho
+    (ação, CVM, banco) não basta — foi assim que a matéria da CVM ganhou
+    taxa de 0,73% ao ano no meio de um texto de governança."""
+    if draft.get("category") != "financas":
+        return False
+    haystack = _fold(
+        draft.get("title", "")
+        + draft.get("focus_keyword", "")
+        + " ".join(fact.get("claim", "") for fact in ledger)
+    )
+    return any(term in haystack for term in _ENRICH_TERMS)
 
 
 def _hero_shows_indicator(draft: dict) -> bool:

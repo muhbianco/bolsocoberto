@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Bolso Coberto — SEO e monetização
  * Description: Expõe os metadados do Rank Math na REST, publica ads.txt e emite schema de FAQ.
- * Version: 1.3.0
+ * Version: 1.4.0
  *
  * Vive em mu-plugins porque o editor externo depende disso para gravar SEO:
  * se ficasse no tema, trocar de tema quebraria a publicação.
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-const BOLSO_SEO_PLUGIN_VERSION = '1.3.0';
+const BOLSO_SEO_PLUGIN_VERSION = '1.4.0';
 
 const BOLSO_SEO_META_KEYS = [
     'rank_math_title',
@@ -58,10 +58,6 @@ function bolso_seo_should_noindex(): bool
     if (is_date() || is_search()) {
         return true;
     }
-    if (is_category()) {
-        $term = get_queried_object();
-        return $term instanceof WP_Term && $term->count < 1;
-    }
     if (!is_tag()) {
         return false;
     }
@@ -104,6 +100,24 @@ add_filter('rank_math/frontend/robots', 'bolso_seo_rank_math_robots');
  * não deve ir para o índice, nem como sitelink.
  */
 add_filter('rank_math/json_ld/disable_search', '__return_true');
+
+/**
+ * O Google ainda recrawla `/?s={search_term_string}` de um SearchAction antigo.
+ * Disallow no robots.txt encerra o crawl; a busca continua noindex se alguém
+ * abrir a URL direto.
+ */
+function bolso_seo_robots_txt(string $output, $is_public): string
+{
+    if (!$is_public) {
+        return $output;
+    }
+    if (!str_contains($output, 'Disallow: /?s=')) {
+        $output .= "Disallow: /?s=\n";
+        $output .= "Disallow: /search/\n";
+    }
+    return $output;
+}
+add_filter('robots_txt', 'bolso_seo_robots_txt', 99, 2);
 
 /**
  * O cache XML do Rank Math grava o índice como tipo "1". Invalidar só
@@ -151,30 +165,6 @@ function bolso_seo_boot(): void
 add_action('init', 'bolso_seo_boot', 99);
 
 /**
- * Categoria sem matéria no menu (hoje: Seguros) é URL fina com noindex.
- * Esconde o item até existir post; quando a redação publicar, o link volta.
- *
- * @param array<string, mixed> $block
- */
-function bolso_seo_hide_empty_category_nav(string $content, array $block): string
-{
-    if (($block['blockName'] ?? '') !== 'core/navigation-link') {
-        return $content;
-    }
-    $url = (string) ($block['attrs']['url'] ?? '');
-    $path = (string) (parse_url($url, PHP_URL_PATH) ?? '');
-    if (!preg_match('#/category/([^/]+)/?#', $path, $matches)) {
-        return $content;
-    }
-    $term = get_category_by_slug(sanitize_title($matches[1]));
-    if ($term instanceof WP_Term && $term->count < 1) {
-        return '';
-    }
-    return $content;
-}
-add_filter('render_block', 'bolso_seo_hide_empty_category_nav', 10, 2);
-
-/**
  * ads.txt virtual: se o arquivo físico sumir num redeploy, o AdSense continua
  * encontrando a declaração e o inventário não fica sem monetizar.
  */
@@ -213,11 +203,12 @@ function bolso_seo_faq_schema(): void
     if (!$post instanceof WP_Post) {
         return;
     }
-    if (!str_contains($post->post_content, 'bc-faq-item')) {
+    if (!str_contains($post->post_content, 'bc-faq-item')
+        && !str_contains($post->post_content, 'bc-faq-item')) {
         return;
     }
 
-    $pattern = '#<div class="bc-faq-item">\s*<h3>(.*?)</h3>\s*<p>(.*?)</p>\s*</div>#si';
+    $pattern = '#<div class="bc-faq(?:ue)?-item">\s*<h3>(.*?)</h3>\s*<p>(.*?)</p>\s*</div>#si';
     if (!preg_match_all($pattern, $post->post_content, $matches, PREG_SET_ORDER)) {
         return;
     }

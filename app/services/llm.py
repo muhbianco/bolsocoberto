@@ -48,7 +48,8 @@ _OUTLINES: dict[ContentType, str] = {
 3. <h2> O que muda no seu bolso — nomeie pelo menos três segmentos concretos de
    quem vive de salário e o efeito em reais por mês ou por ano, com a premissa
    da conta escrita. Se a conta não sair dos fatos, diga isso em vez de estimar.
-4. <h2> Perguntas rápidas — 3 perguntas curtas em <h3> com resposta objetiva.""",
+4. <h2> O que acompanha daqui — o próximo fato a observar, sem inventar prazo.
+   Não escreva seção de perguntas frequentes: o FAQ estruturado entra depois.""",
     ContentType.EXPLICATIVO: """Alvo: 1100 a 1600 palavras. Este é o formato principal do site.
 A notícia é o gancho, não o produto. O leitor chega pelo fato e fica pela explicação.
 1. Abertura de três a quatro frases: o que aconteceu e por que ele deveria se importar.
@@ -60,7 +61,7 @@ A notícia é o gancho, não o produto. O leitor chega pelo fato e fica pela exp
 5. <h2> Os números de hoje — aqui entram os blocos de dados calculados.
 6. <h2> O que fazer com essa informação — orientação geral e honesta, nunca
    recomendação personalizada, e diga também quando a resposta é "não fazer nada".
-7. <h2> Perguntas frequentes — 3 a 5 perguntas em <h3>.""",
+Não escreva seção de perguntas frequentes: o FAQ estruturado entra depois.""",
     ContentType.GUIA: """Alvo: 1800 a 2500 palavras. Conteúdo perene, é o que sustenta a receita.
 1. Abertura que responde a pergunta principal em até 60 palavras, direto,
    porque é esse trecho que vira resposta destacada e citação em resposta de IA.
@@ -70,7 +71,7 @@ A notícia é o gancho, não o produto. O leitor chega pelo fato e fica pela exp
 4. <h2> Comparativo — tabela comparando as opções reais do mercado brasileiro.
 5. <h2> Passo a passo — lista ordenada, acionável.
 6. <h2> Erros que custam caro — 4 a 6 erros comuns e o prejuízo de cada um.
-7. <h2> Perguntas frequentes — 4 a 6 perguntas em <h3>.""",
+Não escreva seção de perguntas frequentes: o FAQ estruturado entra depois."""
 }
 
 _EXTRACT_PROMPT = """Você extrai fatos verificáveis de reportagens para a redação do Bolso Coberto.

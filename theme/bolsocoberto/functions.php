@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) {
 
 // Serve de cache-buster para style.css e content.css: sem subir aqui, quem já
 // visitou o site recebe o HTML novo com o CSS antigo e os cards desmontam.
-const BOLSCOBERTO_THEME_VERSION = '1.1.1';
+const BOLSCOBERTO_THEME_VERSION = '1.1.2';
 
 function bolsocoberto_setup(): void
 {
@@ -189,3 +189,36 @@ function bolsocoberto_seed_menu(): void
     update_option('bolsocoberto_menu_seeded', 1);
 }
 add_action('after_switch_theme', 'bolsocoberto_seed_menu');
+
+/**
+ * "Atualizado em" no byline fica órfão quando a data de alteração é a mesma da
+ * publicação. Só mostramos o grupo se o post foi editado de fato.
+ */
+function bolsocoberto_post_was_updated(): bool
+{
+    $post = get_post();
+    if (!$post instanceof WP_Post) {
+        return false;
+    }
+    $published = get_post_time('U', true, $post);
+    $modified = get_post_modified_time('U', true, $post);
+    return is_int($published) && is_int($modified) && $modified > $published + 60;
+}
+
+function bolsocoberto_hide_stale_updated(string $content, array $block): string
+{
+    if (bolsocoberto_post_was_updated()) {
+        return $content;
+    }
+    $name = (string) ($block['blockName'] ?? '');
+    $class = (string) ($block['attrs']['className'] ?? '');
+    if ($name === 'core/paragraph' && str_contains($class, 'bc-updated-label')) {
+        return '';
+    }
+    if ($name === 'core/post-date'
+        && ($block['attrs']['displayType'] ?? '') === 'modified') {
+        return '';
+    }
+    return $content;
+}
+add_filter('render_block', 'bolsocoberto_hide_stale_updated', 10, 2);

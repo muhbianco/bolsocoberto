@@ -16,9 +16,12 @@ from app.services.sources import (
     collect_press_sources,
     collect_primary_sources,
     is_institutional,
+    render_faq,
     render_sources_block,
     render_takeaways,
     render_trust_links,
+    has_faq_section,
+    strip_duplicate_faq,
 )
 
 FONTE = (
@@ -448,3 +451,52 @@ class TestGeminiResposta:
         job.similarity_max = None
         reasons = job.blocking_reasons(similarity_threshold=0.12)
         assert any("JSON" in reason for reason in reasons)
+
+
+class TestFaqAssemble:
+    def test_nao_duplica_faq_quando_o_corpo_ja_tem_secao(self) -> None:
+        corpo = (
+            "<p>Abertura.</p>"
+            "<h2>Perguntas frequentes sobre o caso</h2>"
+            "<h3>Por que a CVM abriu o processo?</h3>"
+            "<p>Para apurar a fala da presidente.</p>"
+            '<section class="bc-faq"><h2>Perguntas frequentes</h2>'
+            '<div class="bc-faq-item"><h3>Por que a CVM abriu o processo?</h3>'
+            "<p>Para apurar a fala da presidente.</p></div></section>"
+        )
+        limpo = strip_duplicate_faq(corpo)
+        assert limpo.count("Por que a CVM abriu o processo?") == 1
+        assert has_faq_section(limpo)
+        assert "<h2>Perguntas frequentes sobre o caso</h2>" not in limpo
+
+    def test_render_faq_marca_secao(self) -> None:
+        html = render_faq(
+            [{"question": "O que muda no bolso?", "answer": "A reserva no CDB não cai."}]
+        )
+        assert has_faq_section(html)
+        assert strip_duplicate_faq(html) == html
+
+
+class TestMacroEnrich:
+    def test_pauta_da_cvm_nao_ganha_tabela_de_cdi(self) -> None:
+        from app.services.job_runner import _should_attach_macro
+
+        draft = {
+            "category": "financas",
+            "title": "Presidente do Banco do Brasil vira alvo da CVM",
+            "focus_keyword": "presidente do Banco do Brasil",
+        }
+        ledger = [
+            {"claim": "Quem investiu em ações do banco perdeu 15% desde 2024."},
+        ]
+        assert _should_attach_macro(draft, ledger) is False
+
+    def test_pauta_de_selic_continua_com_tabela(self) -> None:
+        from app.services.job_runner import _should_attach_macro
+
+        draft = {
+            "category": "financas",
+            "title": "Copom mantém a Selic em 15% ao ano",
+            "focus_keyword": "selic hoje",
+        }
+        assert _should_attach_macro(draft, []) is True
