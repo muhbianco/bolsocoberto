@@ -442,13 +442,15 @@ class TestGeminiResposta:
     def test_checagem_quebrada_trava_apply(self) -> None:
         from app.models.job import EditorJob
 
-        job = EditorJob.__new__(EditorJob)
-        job.verification_json = {
-            "issues": [],
-            "verdict": "revisar",
-            "parse_failed": True,
-        }
-        job.similarity_max = None
+        # Construtor mapeado: `__new__` pula o estado do SQLAlchemy e a atribuição de coluna quebra.
+        job = EditorJob(
+            verification_json={
+                "issues": [],
+                "verdict": "revisar",
+                "parse_failed": True,
+            },
+            similarity_max=None,
+        )
         reasons = job.blocking_reasons(similarity_threshold=0.12)
         assert any("JSON" in reason for reason in reasons)
 
