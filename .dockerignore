@@ -24,3 +24,4 @@ wordpress-stack.yml
 dns/
 brand/
 theme/
+.woodpecker/

@@ -65,7 +65,11 @@ gravada em `editor_jobs.fact_ledger_json` como prova de apuração.
 | `brand/` | tokens, SVG, ícones, OG |
 | `dns/` | zonas GoDaddy de referência |
 
-Na VPS o build **não** usa `./build.sh prod` (login interativo). `git pull` + `docker build` + `tag` + `push`.
+**Deploy = push no `main`.** O Woodpecker (`ci.muhbianco.com.br`) roda `.woodpecker/ci.yaml` (pytest) e
+`.woodpecker/deploy.yaml`: imagem `muhrilobianco/bolsocoberto:<sha12>` (+ `:latest`), update de
+`bolso-editor_bolso_editor` e `_worker`, e `docker cp` de `theme/` e `scripts/mu-plugins/` no container do
+WordPress quando esses caminhos mudam. `build.sh` fica para build local; o fluxo manual na VPS é só
+break-glass (skill `deploy` do workspace).
 
 O YAML operacional é o **Editor do Portainer**. Este git não leva senha. Não colar o YAML vazio por cima da stack de prod.
 

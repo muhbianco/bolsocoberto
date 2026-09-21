@@ -9,9 +9,10 @@
 #   bolso_editor         — HTTP (Traefik)
 #   bolso_editor_worker  — fila de pauta (mesma imagem, outro comando)
 #
-# Fluxo:
-# 1. git push → na VPS git pull + docker build/tag/push (sem ./build.sh prod)
-# 2. Portainer -> Stacks -> este YAML -> preencher envs -> Deploy
+# Deploy: push no main → Woodpecker (ci.muhbianco.com.br) roda .woodpecker/ci.yaml e
+# .woodpecker/deploy.yaml: imagem :<sha12> (+ :latest), `docker service update` do editor e
+# do worker, e `docker cp` do tema/mu-plugin no WordPress quando eles mudam.
+# Este YAML (secrets inline no Portainer) só muda à mão no Portainer.
 # 3. DNS CNAME post → manager.bolsocoberto.com.br
 #
 # IMPORTANTE — Portainer:

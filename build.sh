@@ -1,4 +1,5 @@
 #!/bin/sh
+# Build LOCAL. Produção: push no main (Woodpecker). `prod` só como break-glass.
 set -e
 cd "$(dirname "$0")"
 

@@ -1,0 +1,46 @@
+# Push no main = deploy do editor (stack bolso-editor). Imagem :<sha12> (+ :latest).
+# Tema filho e mu-plugin de SEO do WordPress (stack bolsocoberto, imagem oficial sem build)
+# vão por `docker cp` só quando mudam.
+when:
+  - event: push
+    branch: main
+
+depends_on: [ci]
+
+steps:
+  build:
+    image: muhrilobianco/ci-deployer:1
+    pull: true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /root/.docker/config.json:/root/.docker/config.json:ro
+    commands:
+      - hel1-build --image muhrilobianco/bolsocoberto --tag ${CI_COMMIT_SHA:0:12} --extra-tag latest
+
+  deploy:
+    image: muhrilobianco/ci-deployer:1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /root/.docker/config.json:/root/.docker/config.json:ro
+      - /var/lib/hel1-deploy:/var/lib/hel1-deploy
+    commands:
+      - >-
+        hel1-deploy services --app bolso-editor
+        --image muhrilobianco/bolsocoberto --tag ${CI_COMMIT_SHA:0:12}
+        --services bolso-editor_bolso_editor,bolso-editor_bolso_editor_worker
+        --smoke https://post.bolsocoberto.com.br/health/live
+
+  wordpress-theme:
+    image: muhrilobianco/ci-deployer:1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    when:
+      - path:
+          include: [theme/**, scripts/mu-plugins/**]
+    commands:
+      - WP=$(docker ps -qf name=bolsocoberto_wordpress | head -n 1)
+      - test -n "$${WP}" || { echo "container bolsocoberto_wordpress não encontrado"; exit 1; }
+      - docker cp theme/bolsocoberto/. "$${WP}":/var/www/html/wp-content/themes/bolsocoberto/
+      - docker cp scripts/mu-plugins/bolsocoberto-seo.php "$${WP}":/var/www/html/wp-content/mu-plugins/bolsocoberto-seo.php
+      - docker exec "$${WP}" chown -R www-data:www-data /var/www/html/wp-content/themes/bolsocoberto /var/www/html/wp-content/mu-plugins
+      - echo "tema e mu-plugin copiados para $${WP}"
