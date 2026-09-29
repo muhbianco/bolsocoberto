@@ -59,8 +59,18 @@ x-app-env: &app_env
   BCB_TIMEOUT_SECONDS: "10"
   HERO_IMAGE_ENABLED: "true"
 
+# Rotacao de log de todo o stack do Stoat. O padrao do daemon da hel1 cobre o mesmo, mas mora
+# no host e some numa reinstalacao; aqui fica versionado. Teto de 30 MB por container: o Mongo
+# sozinho escrevia 190 MB por dia e chegou a 3,2 GB antes de alguem notar (29/09/2026).
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   bolso_editor:
+    logging: *logging
     image: muhrilobianco/bolsocoberto:latest
     environment:
       <<: *app_env
@@ -106,6 +116,7 @@ services:
         - traefik.http.middlewares.bolso_editor_headers.headers.permissionsPolicy=camera=(), microphone=(), geolocation=()
 
   bolso_editor_worker:
+    logging: *logging
     image: muhrilobianco/bolsocoberto:latest
     command:
       - python
