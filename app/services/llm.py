@@ -367,9 +367,10 @@ class EditorialLLM:
                 "código, seguindo este JSON Schema:\n"
                 + json.dumps(response_schema, ensure_ascii=False)
             )
+        # Sem `temperature`: Claude 5.x devolve 400 "temperature is deprecated for this model". A
+        # temperatura por passo segue valendo no caminho do Gemini.
         payload: dict[str, Any] = {
             "model": model,
-            "temperature": temperature,
             "max_tokens": cap_output_tokens(max_output_tokens),
             "messages": [{"role": "user", "content": conteudo}],
         }
