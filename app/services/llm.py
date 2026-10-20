@@ -265,8 +265,17 @@ class EditorialLLM:
     """
 
     def __init__(self) -> None:
-        self.api_key = settings.gemini_api_key.get_secret_value().strip()
-        self.model = settings.llm_model.strip() or "gemini-3.5-flash"
+        self.provider = (settings.llm_provider or "anthropic").strip().lower()
+        if self.provider == "gemini":
+            self.api_key = settings.gemini_api_key.get_secret_value().strip()
+            self.model = settings.llm_model.strip() or "gemini-3.5-flash"
+            self.write_model = self.model
+            self.base_url = ""
+        else:
+            self.api_key = settings.anthropic_api_key.get_secret_value().strip()
+            self.base_url = settings.anthropic_base_url.rstrip("/")
+            self.model = settings.anthropic_model.strip() or "claude-sonnet-5-5"
+            self.write_model = settings.anthropic_write_model.strip() or "claude-opus-5-5"
 
     async def _generate(
         self,
@@ -275,19 +284,29 @@ class EditorialLLM:
         temperature: float,
         max_output_tokens: int,
         response_schema: dict[str, Any] | None = None,
+        model: str | None = None,
     ) -> dict[str, Any]:
+        chosen = (model or self.model).strip() or self.model
+        if self.provider != "gemini":
+            return await self._generate_anthropic(
+                prompt,
+                temperature=temperature,
+                max_output_tokens=max_output_tokens,
+                response_schema=response_schema,
+                model=chosen,
+            )
         if not self.api_key:
             raise DomainError("GEMINI_API_KEY não configurada.")
         payload: dict[str, Any] = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generationConfig": _generation_config(
-                self.model,
+                chosen,
                 temperature,
                 max_output_tokens,
                 response_schema=response_schema,
             ),
         }
-        url = _GEMINI_URL.format(model=self.model)
+        url = _GEMINI_URL.format(model=chosen)
         timeout = httpx.Timeout(
             connect=10.0,
             write=30.0,
@@ -325,6 +344,64 @@ class EditorialLLM:
             )
             raise DomainError(_gemini_refusal_message(response))
         return _parse_generate_response(response.json())
+
+    async def _generate_anthropic(
+        self,
+        prompt: str,
+        *,
+        temperature: float,
+        max_output_tokens: int,
+        response_schema: dict[str, Any] | None,
+        model: str,
+    ) -> dict[str, Any]:
+        """Claude pelo endpoint compatível com OpenAI. Esquema vai como instrução: o modo estrito
+        da Anthropic exige strict:true + additionalProperties:false, que estes esquemas não cumprem;
+        o parser já valida a saída."""
+        if not self.api_key:
+            raise DomainError("ANTHROPIC_API_KEY não configurada.")
+        conteudo = prompt
+        if response_schema:
+            conteudo = (
+                prompt
+                + "\n\nResponda SOMENTE com um JSON válido, sem texto fora do JSON e sem cercas de "
+                "código, seguindo este JSON Schema:\n"
+                + json.dumps(response_schema, ensure_ascii=False)
+            )
+        payload: dict[str, Any] = {
+            "model": model,
+            "temperature": temperature,
+            "max_tokens": cap_output_tokens(max_output_tokens),
+            "messages": [{"role": "user", "content": conteudo}],
+        }
+        url = f"{self.base_url}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        timeout = httpx.Timeout(connect=10.0, write=30.0, pool=10.0, read=settings.llm_timeout_seconds)
+        response: httpx.Response | None = None
+        for attempt in range(2):
+            try:
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    response = await client.post(url, headers=headers, json=payload)
+                break
+            except httpx.TimeoutException as exc:
+                logger.warning("Claude estourou o tempo", extra={"attempt": attempt + 1})
+                if attempt == 1:
+                    raise DomainError(_network_error_message(exc)) from exc
+                await asyncio.sleep(1.5)
+            except httpx.HTTPError as exc:
+                logger.exception("Falha de rede no Claude")
+                raise DomainError(_network_error_message(exc)) from exc
+        if response is None:
+            raise DomainError("LLM indisponível agora.")
+        if response.status_code >= 400:
+            logger.error(
+                "Claude recusou",
+                extra={"status": response.status_code, "body": (response.text or "")[:400]},
+            )
+            raise DomainError(_anthropic_refusal_message(response))
+        return _parse_anthropic_response(response.json())
 
     async def extract_facts(self, sources: list[tuple[str, str]]) -> list[dict[str, str]]:
         blocks = [
@@ -387,6 +464,7 @@ class EditorialLLM:
             temperature=0.5,
             max_output_tokens=settings.llm_max_output_tokens,
             response_schema=_WRITE_SCHEMA,
+            model=self.write_model,
         )
         return _normalize_draft(parsed)
 
@@ -552,10 +630,51 @@ def _gemini_refusal_message(response: httpx.Response) -> str:
 def _network_error_message(exc: BaseException) -> str:
     if isinstance(exc, httpx.TimeoutException):
         return (
-            "O Gemini demorou demais nesta passagem. "
+            "O LLM demorou demais nesta passagem. "
             "Tente de novo; se persistir, use menos fontes."
         )
     return "LLM indisponível agora."
+
+
+def _anthropic_refusal_message(response: httpx.Response) -> str:
+    status = response.status_code
+    if status == 401:
+        return "Claude recusou a chave (401). Confira ANTHROPIC_API_KEY."
+    if status == 404:
+        return "Modelo Claude não encontrado. Confira o modelo configurado."
+    if status == 429:
+        return "Cota do Claude estourada. Tente de novo em alguns minutos."
+    return "LLM recusou a geração."
+
+
+def _parse_anthropic_response(payload: dict[str, Any]) -> dict[str, Any]:
+    try:
+        choice = payload["choices"][0]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise DomainError("Resposta do LLM sem conteúdo.") from exc
+    finish = str(choice.get("finish_reason") or "")
+    content = str((choice.get("message") or {}).get("content") or "")
+    usage = payload.get("usage")
+    if isinstance(usage, dict):
+        logger.info(
+            "Claude usage",
+            extra={
+                "finish": finish,
+                "prompt": usage.get("prompt_tokens"),
+                "output": usage.get("completion_tokens"),
+                "total": usage.get("total_tokens"),
+            },
+        )
+    if not content.strip():
+        if finish == "length":
+            raise DomainError(_MAX_TOKENS_MESSAGE)
+        raise DomainError("Resposta do LLM sem texto.")
+    try:
+        return _parse_json_object(content)
+    except DomainError:
+        if finish == "length":
+            raise DomainError(_MAX_TOKENS_MESSAGE) from None
+        raise
 
 
 def _generation_config(

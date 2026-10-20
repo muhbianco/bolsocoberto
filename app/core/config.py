@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = Field(default=300.0, ge=30.0, le=600.0)
     # Teto real da API Gemini 3.5 Flash é 65536; valores maiores são ignorados.
     llm_max_output_tokens: int = Field(default=65536, ge=1024, le=65536)
+    # Provedor do redator. Default gemini (deploy não quebra sem a chave); vira Claude quando
+    # LLM_PROVIDER=anthropic + ANTHROPIC_API_KEY entram no env da stack (Portainer).
+    llm_provider: str = "gemini"
+    anthropic_api_key: SecretStr = SecretStr("")
+    anthropic_base_url: str = "https://api.anthropic.com/v1"
+    # "write" usa Opus (qualidade de prosa); extract/verify usam Sonnet.
+    anthropic_model: str = "claude-sonnet-5-5"
+    anthropic_write_model: str = "claude-opus-5-5"
 
     # Contenção máxima de 8-gramas do rascunho dentro de qualquer fonte.
     # Acima disso o texto é paráfrase, não conteúdo próprio, e o apply é bloqueado.
